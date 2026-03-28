@@ -13,19 +13,38 @@
       justify-content: center;
       background: #ffffff;
       font-family: 'Comic Sans MS', cursive;
+      cursor: pointer;
     }
     .logo {
       font-size: clamp(120px, 25vw, 280px);
       font-weight: bold;
-      color: #1a1a2e;
       letter-spacing: 0.02em;
       line-height: 1;
       user-select: none;
     }
-    .logo .dot { color: #FF3B30; }
   </style>
 </head>
 <body>
-  <div class="logo">l<span class="dot">i</span>l</div>
+  <div class="logo"><span id="l1">l</span><span id="i">i</span><span id="l2">l</span></div>
+  <script>
+    const colors = [
+      '#FF3B30', '#FF8C42', '#FFD60A', '#30D158',
+      '#0A84FF', '#5E5CE6', '#FF375F', '#4ECDC4',
+      '#AF52DE', '#FF6B6B', '#00C7BE', '#FF9500'
+    ];
+
+    function pick() {
+      return colors[Math.floor(Math.random() * colors.length)];
+    }
+
+    function randomize() {
+      document.getElementById('l1').style.color = pick();
+      document.getElementById('i').style.color = pick();
+      document.getElementById('l2').style.color = pick();
+    }
+
+    randomize();
+    document.body.addEventListener('click', randomize);
+  </script>
 </body>
 </html>
