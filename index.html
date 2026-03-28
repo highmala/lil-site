@@ -4,9 +4,14 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>lil.audio</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&display=swap" rel="stylesheet">
   <style>
+    @font-face {
+      font-family: 'ComicSans';
+      src: url('fonts/comic-sans-bold.woff2') format('woff2');
+      font-weight: bold;
+      font-style: normal;
+      font-display: swap;
+    }
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       min-height: 100vh;
@@ -14,7 +19,7 @@
       align-items: center;
       justify-content: center;
       background: #ffffff;
-      font-family: 'Comic Sans MS', 'Comic Neue', cursive;
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
       cursor: pointer;
     }
     .logo {
