@@ -33,6 +33,7 @@
 </head>
 <body>
   <div class="logo"><span id="l1">l</span><span id="i">i</span><span id="l2">l</span></div>
+  <audio id="bg" src="music.mp3" loop preload="auto"></audio>
   <script>
     const colors = [
       '#FF3B30', '#FF8C42', '#FFD60A', '#30D158',
@@ -51,7 +52,16 @@
     }
 
     randomize();
-    document.body.addEventListener('click', randomize);
+
+    // Start audio on first click (browsers require user interaction)
+    let started = false;
+    document.body.addEventListener('click', () => {
+      randomize();
+      if (!started) {
+        document.getElementById('bg').play();
+        started = true;
+      }
+    });
   </script>
 </body>
 </html>
