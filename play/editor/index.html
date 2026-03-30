@@ -1,0 +1,950 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>lil world editor</title>
+  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.min.js"></script>
+  <style>
+    @font-face {
+      font-family: 'ComicSans';
+      src: url('../../fonts/comic-sans-bold.woff2') format('woff2');
+      font-weight: bold; font-style: normal; font-display: swap;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #111118;
+      color: #ddd;
+      height: 100vh;
+      display: flex;
+      overflow: hidden;
+    }
+
+    /* ─── LEFT: XY PAD ─── */
+    #pad-area {
+      width: 40%;
+      min-width: 300px;
+      height: 100vh;
+      position: relative;
+      border-right: 1px solid #222;
+      cursor: crosshair;
+      touch-action: none;
+      transition: background-color 1s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    #pad-area .corner-label {
+      position: absolute;
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: 11px;
+      font-weight: bold;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      opacity: 0.25;
+      pointer-events: none;
+    }
+    #pad-area .corner-label.tl { top: 12px; left: 12px; }
+    #pad-area .corner-label.tr { top: 12px; right: 12px; text-align: right; }
+    #pad-area .corner-label.bl { bottom: 12px; left: 12px; }
+    #pad-area .corner-label.br { bottom: 12px; right: 12px; text-align: right; }
+    #ball {
+      position: absolute;
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      background: #FF8C42;
+      box-shadow: 0 0 20px rgba(255,140,66,0.4);
+      z-index: 10;
+      animation: breathe 3s ease-in-out infinite;
+    }
+    @keyframes breathe {
+      0%,100% { transform: translate(-50%,-50%) scale(1); }
+      50% { transform: translate(-50%,-50%) scale(1.1); }
+    }
+    #pad-logo {
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: 48px; font-weight: bold;
+      opacity: 0.06; pointer-events: none;
+    }
+    #crosshair-h, #crosshair-v {
+      position: absolute; background: rgba(255,255,255,0.04); pointer-events: none;
+    }
+    #crosshair-h { left: 0; right: 0; height: 1px; top: 50%; }
+    #crosshair-v { top: 0; bottom: 0; width: 1px; left: 50%; }
+    #start-btn {
+      position: absolute; top: 50%; left: 50%;
+      transform: translate(-50%,-50%);
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: 16px; font-weight: bold;
+      background: rgba(255,255,255,0.1);
+      border: 2px solid rgba(255,255,255,0.2);
+      color: #fff; padding: 12px 28px;
+      border-radius: 40px; cursor: pointer;
+      z-index: 20;
+    }
+    #start-btn:hover { background: rgba(255,255,255,0.15); }
+    #xy-readout {
+      position: absolute; bottom: 8px; left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px; opacity: 0.25;
+      font-family: monospace; pointer-events: none;
+    }
+
+    /* ─── RIGHT: EDITOR PANELS ─── */
+    #editor {
+      flex: 1;
+      height: 100vh;
+      overflow-y: auto;
+      padding: 16px 20px;
+    }
+    #editor h1 {
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: 20px; margin-bottom: 4px;
+    }
+    #editor .subtitle { font-size: 11px; opacity: 0.3; margin-bottom: 16px; }
+
+    /* Tabs */
+    .tabs {
+      display: flex; gap: 2px; margin-bottom: 16px;
+      border-bottom: 1px solid #333;
+    }
+    .tab {
+      padding: 8px 14px; font-size: 12px; font-weight: 600;
+      background: transparent; border: none; color: #888;
+      cursor: pointer; border-bottom: 2px solid transparent;
+      transition: all 0.2s;
+    }
+    .tab.active { color: #fff; border-bottom-color: #FF8C42; }
+    .tab:hover { color: #ccc; }
+
+    /* Panel */
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* Section */
+    .section {
+      background: rgba(255,255,255,0.03);
+      border: 1px solid #222;
+      border-radius: 8px;
+      padding: 14px;
+      margin-bottom: 12px;
+    }
+    .section h3 {
+      font-size: 11px; text-transform: uppercase;
+      letter-spacing: 0.1em; opacity: 0.5;
+      margin-bottom: 10px;
+    }
+
+    /* Slider row */
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 8px;
+    }
+    .slider-row label {
+      font-size: 11px;
+      min-width: 90px;
+      opacity: 0.7;
+    }
+    .slider-row input[type="range"] {
+      flex: 1;
+      height: 4px;
+      -webkit-appearance: none;
+      appearance: none;
+      background: #333;
+      border-radius: 2px;
+      outline: none;
+    }
+    .slider-row input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #FF8C42;
+      cursor: pointer;
+    }
+    .slider-row .val {
+      font-size: 11px;
+      font-family: monospace;
+      min-width: 40px;
+      text-align: right;
+      opacity: 0.5;
+    }
+
+    /* Scale selector */
+    .scale-grid {
+      display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px;
+    }
+    .scale-btn {
+      font-size: 10px; padding: 4px 10px;
+      background: #222; border: 1px solid #333;
+      border-radius: 12px; color: #aaa;
+      cursor: pointer; transition: all 0.2s;
+    }
+    .scale-btn.active { background: #FF8C42; color: #000; border-color: #FF8C42; }
+
+    /* Color picker */
+    .color-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 6px;
+    }
+    .color-row label { font-size: 11px; min-width: 90px; opacity: 0.7; }
+    .color-row input[type="color"] {
+      width: 32px; height: 24px; border: 1px solid #444;
+      border-radius: 4px; background: none; cursor: pointer;
+      padding: 0;
+    }
+
+    /* Export button */
+    #export-btn {
+      width: 100%; padding: 12px;
+      background: #FF8C42; color: #000;
+      font-weight: 700; font-size: 13px;
+      border: none; border-radius: 8px;
+      cursor: pointer; margin-top: 12px;
+      transition: background 0.2s;
+    }
+    #export-btn:hover { background: #ffaa66; }
+
+    /* Corner indicator */
+    .corner-tag {
+      display: inline-block;
+      font-size: 9px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    .corner-tag.sp { background: #FFD60A22; color: #FFD60A; }
+    .corner-tag.ss { background: #FF6B6B22; color: #FF6B6B; }
+    .corner-tag.fp { background: #4ECDC422; color: #4ECDC4; }
+    .corner-tag.fs { background: #5E5CE622; color: #5E5CE6; }
+  </style>
+</head>
+<body>
+
+  <!-- XY PAD -->
+  <div id="pad-area">
+    <div id="crosshair-h"></div>
+    <div id="crosshair-v"></div>
+    <div class="corner-label tl">hum · play</div>
+    <div class="corner-label tr">glow · play</div>
+    <div class="corner-label bl">hum · sleep</div>
+    <div class="corner-label br">glow · sleep</div>
+    <div id="pad-logo">lil</div>
+    <div id="ball"></div>
+    <button id="start-btn">▶ start</button>
+    <div id="xy-readout">x: 0.50 y: 0.50</div>
+  </div>
+
+  <!-- EDITOR -->
+  <div id="editor">
+    <h1>world editor</h1>
+    <div class="subtitle">build & tune your lil world in real-time</div>
+
+    <div class="tabs">
+      <button class="tab active" data-panel="global">Global</button>
+      <button class="tab" data-panel="hum-play">Hum+Play</button>
+      <button class="tab" data-panel="hum-sleep">Hum+Sleep</button>
+      <button class="tab" data-panel="glow-play">Glow+Play</button>
+      <button class="tab" data-panel="glow-sleep">Glow+Sleep</button>
+      <button class="tab" data-panel="mix">Mix</button>
+      <button class="tab" data-panel="fx">FX</button>
+      <button class="tab" data-panel="colors">Colors</button>
+    </div>
+
+    <!-- GLOBAL -->
+    <div class="panel active" id="panel-global">
+      <div class="section">
+        <h3>Tempo</h3>
+        <div class="slider-row">
+          <label>Sleep BPM</label>
+          <input type="range" id="tempo-sleep" min="30" max="90" value="55" step="1">
+          <span class="val" id="v-tempo-sleep">55</span>
+        </div>
+        <div class="slider-row">
+          <label>Play BPM</label>
+          <input type="range" id="tempo-play" min="70" max="160" value="115" step="1">
+          <span class="val" id="v-tempo-play">115</span>
+        </div>
+        <div class="slider-row">
+          <label>Glow slowdown</label>
+          <input type="range" id="tempo-glow" min="50" max="100" value="85" step="1">
+          <span class="val" id="v-tempo-glow">85%</span>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Bars per chord</h3>
+        <div class="slider-row">
+          <label>Chord length</label>
+          <input type="range" id="bars-per-chord" min="1" max="8" value="2" step="1">
+          <span class="val" id="v-bars-per-chord">2</span>
+        </div>
+      </div>
+      <div class="section">
+        <h3>World Meta</h3>
+        <div class="slider-row">
+          <label>Name</label>
+          <input type="text" id="world-name" value="Untitled" style="flex:1;background:#222;border:1px solid #333;color:#ddd;padding:4px 8px;border-radius:4px;font-size:12px;">
+        </div>
+        <div class="slider-row">
+          <label>Artist</label>
+          <input type="text" id="world-artist" value="" style="flex:1;background:#222;border:1px solid #333;color:#ddd;padding:4px 8px;border-radius:4px;font-size:12px;">
+        </div>
+      </div>
+    </div>
+
+    <!-- HUM+PLAY -->
+    <div class="panel" id="panel-hum-play">
+      <div class="corner-tag sp">hum · play</div>
+      <div class="section">
+        <h3>Scale</h3>
+        <div class="scale-grid" data-corner="sp">
+          <button class="scale-btn active" data-scale="0,2,4,7,9">Maj Penta</button>
+          <button class="scale-btn" data-scale="0,2,4,5,7,9,11">Major</button>
+          <button class="scale-btn" data-scale="0,2,3,5,7,9,10">Dorian</button>
+          <button class="scale-btn" data-scale="0,2,4,6,7,9,11">Lydian</button>
+          <button class="scale-btn" data-scale="0,3,5,7,10">Min Penta</button>
+          <button class="scale-btn" data-scale="0,2,3,5,7,8,10">Minor</button>
+          <button class="scale-btn" data-scale="0,1,4,5,7,8,11">Harm Min</button>
+          <button class="scale-btn" data-scale="0,2,4,6,8,10">Whole Tone</button>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Melody</h3>
+        <div class="slider-row">
+          <label>Density</label>
+          <input type="range" id="sp-mel-density" min="0" max="100" value="70" step="1">
+          <span class="val" id="v-sp-mel-density">70%</span>
+        </div>
+        <div class="slider-row">
+          <label>Register (low)</label>
+          <input type="range" id="sp-mel-low" min="36" max="84" value="60" step="1">
+          <span class="val" id="v-sp-mel-low">60</span>
+        </div>
+        <div class="slider-row">
+          <label>Register (high)</label>
+          <input type="range" id="sp-mel-high" min="48" max="96" value="79" step="1">
+          <span class="val" id="v-sp-mel-high">79</span>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Rhythm</h3>
+        <div class="slider-row">
+          <label>Kick level</label>
+          <input type="range" id="sp-kick" min="0" max="100" value="60" step="1">
+          <span class="val" id="v-sp-kick">60%</span>
+        </div>
+        <div class="slider-row">
+          <label>Hat level</label>
+          <input type="range" id="sp-hat" min="0" max="100" value="50" step="1">
+          <span class="val" id="v-sp-hat">50%</span>
+        </div>
+        <div class="slider-row">
+          <label>Swing</label>
+          <input type="range" id="sp-swing" min="0" max="100" value="0" step="1">
+          <span class="val" id="v-sp-swing">0%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- HUM+SLEEP -->
+    <div class="panel" id="panel-hum-sleep">
+      <div class="corner-tag ss">hum · sleep</div>
+      <div class="section">
+        <h3>Scale</h3>
+        <div class="scale-grid" data-corner="ss">
+          <button class="scale-btn" data-scale="0,2,4,7,9">Maj Penta</button>
+          <button class="scale-btn" data-scale="0,2,3,5,7,9,10">Dorian</button>
+          <button class="scale-btn active" data-scale="0,3,5,7,10">Min Penta</button>
+          <button class="scale-btn" data-scale="0,2,3,5,7,8,10">Minor</button>
+          <button class="scale-btn" data-scale="0,2,4,6,7,9,11">Lydian</button>
+          <button class="scale-btn" data-scale="0,1,4,5,7,8,11">Harm Min</button>
+          <button class="scale-btn" data-scale="0,2,4,6,8,10">Whole Tone</button>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Melody</h3>
+        <div class="slider-row">
+          <label>Density</label>
+          <input type="range" id="ss-mel-density" min="0" max="100" value="30" step="1">
+          <span class="val" id="v-ss-mel-density">30%</span>
+        </div>
+        <div class="slider-row">
+          <label>Register (low)</label>
+          <input type="range" id="ss-mel-low" min="36" max="84" value="52" step="1">
+          <span class="val" id="v-ss-mel-low">52</span>
+        </div>
+        <div class="slider-row">
+          <label>Register (high)</label>
+          <input type="range" id="ss-mel-high" min="48" max="96" value="68" step="1">
+          <span class="val" id="v-ss-mel-high">68</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- GLOW+PLAY -->
+    <div class="panel" id="panel-glow-play">
+      <div class="corner-tag fp">glow · play</div>
+      <div class="section">
+        <h3>Scale</h3>
+        <div class="scale-grid" data-corner="fp">
+          <button class="scale-btn" data-scale="0,2,4,7,9">Maj Penta</button>
+          <button class="scale-btn active" data-scale="0,2,4,6,7,9,11">Lydian</button>
+          <button class="scale-btn" data-scale="0,2,4,5,7,9,11">Major</button>
+          <button class="scale-btn" data-scale="0,2,3,5,7,9,10">Dorian</button>
+          <button class="scale-btn" data-scale="0,3,5,7,10">Min Penta</button>
+          <button class="scale-btn" data-scale="0,2,4,6,8,10">Whole Tone</button>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Bells</h3>
+        <div class="slider-row">
+          <label>Density</label>
+          <input type="range" id="fp-bell-density" min="0" max="100" value="40" step="1">
+          <span class="val" id="v-fp-bell-density">40%</span>
+        </div>
+        <div class="slider-row">
+          <label>Register</label>
+          <input type="range" id="fp-bell-reg" min="72" max="108" value="84" step="1">
+          <span class="val" id="v-fp-bell-reg">84</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- GLOW+SLEEP -->
+    <div class="panel" id="panel-glow-sleep">
+      <div class="corner-tag fs">glow · sleep</div>
+      <div class="section">
+        <h3>Scale</h3>
+        <div class="scale-grid" data-corner="fs">
+          <button class="scale-btn active" data-scale="0,2,4,7,9">Maj Penta</button>
+          <button class="scale-btn" data-scale="0,2,4,6,7,9,11">Lydian</button>
+          <button class="scale-btn" data-scale="0,3,5,7,10">Min Penta</button>
+          <button class="scale-btn" data-scale="0,2,4,6,8,10">Whole Tone</button>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Pad / Drone</h3>
+        <div class="slider-row">
+          <label>Pad level</label>
+          <input type="range" id="fs-pad" min="0" max="100" value="70" step="1">
+          <span class="val" id="v-fs-pad">70%</span>
+        </div>
+        <div class="slider-row">
+          <label>Noise level</label>
+          <input type="range" id="fs-noise" min="0" max="100" value="25" step="1">
+          <span class="val" id="v-fs-noise">25%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- MIX -->
+    <div class="panel" id="panel-mix">
+      <div class="section">
+        <h3>Voice Levels</h3>
+        <div class="slider-row">
+          <label>Music box</label>
+          <input type="range" id="mix-musicbox" min="0" max="100" value="75" step="1">
+          <span class="val" id="v-mix-musicbox">75%</span>
+        </div>
+        <div class="slider-row">
+          <label>Vocal</label>
+          <input type="range" id="mix-vocal" min="0" max="100" value="60" step="1">
+          <span class="val" id="v-mix-vocal">60%</span>
+        </div>
+        <div class="slider-row">
+          <label>Bell</label>
+          <input type="range" id="mix-bell" min="0" max="100" value="50" step="1">
+          <span class="val" id="v-mix-bell">50%</span>
+        </div>
+        <div class="slider-row">
+          <label>Pad</label>
+          <input type="range" id="mix-pad" min="0" max="100" value="55" step="1">
+          <span class="val" id="v-mix-pad">55%</span>
+        </div>
+        <div class="slider-row">
+          <label>Bass</label>
+          <input type="range" id="mix-bass" min="0" max="100" value="60" step="1">
+          <span class="val" id="v-mix-bass">60%</span>
+        </div>
+        <div class="slider-row">
+          <label>Kick</label>
+          <input type="range" id="mix-kick" min="0" max="100" value="55" step="1">
+          <span class="val" id="v-mix-kick">55%</span>
+        </div>
+        <div class="slider-row">
+          <label>Master</label>
+          <input type="range" id="mix-master" min="0" max="100" value="70" step="1">
+          <span class="val" id="v-mix-master">70%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- FX -->
+    <div class="panel" id="panel-fx">
+      <div class="section">
+        <h3>Reverb</h3>
+        <div class="slider-row">
+          <label>Melody verb</label>
+          <input type="range" id="fx-mel-reverb" min="0" max="100" value="30" step="1">
+          <span class="val" id="v-fx-mel-reverb">30%</span>
+        </div>
+        <div class="slider-row">
+          <label>Decay min</label>
+          <input type="range" id="fx-decay-min" min="1" max="10" value="2" step="0.5">
+          <span class="val" id="v-fx-decay-min">2s</span>
+        </div>
+        <div class="slider-row">
+          <label>Decay max</label>
+          <input type="range" id="fx-decay-max" min="2" max="20" value="10" step="0.5">
+          <span class="val" id="v-fx-decay-max">10s</span>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Delay</h3>
+        <div class="slider-row">
+          <label>Feedback min</label>
+          <input type="range" id="fx-fb-min" min="0" max="60" value="8" step="1">
+          <span class="val" id="v-fx-fb-min">8%</span>
+        </div>
+        <div class="slider-row">
+          <label>Feedback max</label>
+          <input type="range" id="fx-fb-max" min="0" max="80" value="38" step="1">
+          <span class="val" id="v-fx-fb-max">38%</span>
+        </div>
+      </div>
+      <div class="section">
+        <h3>Filter</h3>
+        <div class="slider-row">
+          <label>LP min (sleep)</label>
+          <input type="range" id="fx-filt-min" min="200" max="3000" value="700" step="50">
+          <span class="val" id="v-fx-filt-min">700</span>
+        </div>
+        <div class="slider-row">
+          <label>LP max (play)</label>
+          <input type="range" id="fx-filt-max" min="3000" max="16000" value="9000" step="100">
+          <span class="val" id="v-fx-filt-max">9000</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- COLORS -->
+    <div class="panel" id="panel-colors">
+      <div class="section">
+        <h3>Corner Colors</h3>
+        <div class="color-row">
+          <label>Hum + Play</label>
+          <input type="color" id="color-sp" value="#FFD60A">
+        </div>
+        <div class="color-row">
+          <label>Glow + Play</label>
+          <input type="color" id="color-fp" value="#4ECDC4">
+        </div>
+        <div class="color-row">
+          <label>Hum + Sleep</label>
+          <input type="color" id="color-ss" value="#FF6B6B">
+        </div>
+        <div class="color-row">
+          <label>Glow + Sleep</label>
+          <input type="color" id="color-fs" value="#5E5CE6">
+        </div>
+      </div>
+    </div>
+
+    <button id="export-btn">⬇ Export World JSON</button>
+  </div>
+
+<script>
+// ═════════════════════════════
+// EDITOR STATE (mirrors world config)
+// ═════════════════════════════
+const W = {
+  meta: { name: 'Untitled', artist: '' },
+  tempo: { sleep: 55, play: 115, glowMult: 0.85 },
+  barsPerChord: 2,
+  corners: {
+    sp: { scale: [0,2,4,7,9], melDensity: 0.7, melLow: 60, melHigh: 79, kick: 0.6, hat: 0.5, swing: 0 },
+    ss: { scale: [0,3,5,7,10], melDensity: 0.3, melLow: 52, melHigh: 68 },
+    fp: { scale: [0,2,4,6,7,9,11], bellDensity: 0.4, bellReg: 84 },
+    fs: { scale: [0,2,4,7,9], pad: 0.7, noise: 0.25 },
+  },
+  mix: { musicbox: 0.75, vocal: 0.6, bell: 0.5, pad: 0.55, bass: 0.6, kick: 0.55, master: 0.7 },
+  fx: { melReverb: 0.3, decayMin: 2, decayMax: 10, fbMin: 0.08, fbMax: 0.38, filtMin: 700, filtMax: 9000 },
+  colors: { sp: '#FFD60A', fp: '#4ECDC4', ss: '#FF6B6B', fs: '#5E5CE6' },
+};
+
+// ═════════════════════════════
+// TABS
+// ═════════════════════════════
+document.querySelectorAll('.tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    tab.classList.add('active');
+    document.getElementById('panel-' + tab.dataset.panel).classList.add('active');
+  });
+});
+
+// ═════════════════════════════
+// SCALE BUTTONS
+// ═════════════════════════════
+document.querySelectorAll('.scale-grid').forEach(grid => {
+  grid.querySelectorAll('.scale-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      grid.querySelectorAll('.scale-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const corner = grid.dataset.corner;
+      W.corners[corner].scale = btn.dataset.scale.split(',').map(Number);
+    });
+  });
+});
+
+// ═════════════════════════════
+// SLIDER BINDINGS
+// ═════════════════════════════
+function bindSlider(id, getter, setter, formatter) {
+  const el = document.getElementById(id);
+  const valEl = document.getElementById('v-' + id);
+  el.addEventListener('input', () => {
+    const v = parseFloat(el.value);
+    setter(v);
+    valEl.textContent = formatter ? formatter(v) : v;
+  });
+}
+
+// Global
+bindSlider('tempo-sleep', null, v => W.tempo.sleep = v);
+bindSlider('tempo-play', null, v => W.tempo.play = v);
+bindSlider('tempo-glow', null, v => W.tempo.glowMult = v/100, v => v+'%');
+bindSlider('bars-per-chord', null, v => W.barsPerChord = v);
+
+// Hum+Play
+bindSlider('sp-mel-density', null, v => W.corners.sp.melDensity = v/100, v => v+'%');
+bindSlider('sp-mel-low', null, v => W.corners.sp.melLow = v);
+bindSlider('sp-mel-high', null, v => W.corners.sp.melHigh = v);
+bindSlider('sp-kick', null, v => W.corners.sp.kick = v/100, v => v+'%');
+bindSlider('sp-hat', null, v => W.corners.sp.hat = v/100, v => v+'%');
+bindSlider('sp-swing', null, v => W.corners.sp.swing = v/100, v => v+'%');
+
+// Hum+Sleep
+bindSlider('ss-mel-density', null, v => W.corners.ss.melDensity = v/100, v => v+'%');
+bindSlider('ss-mel-low', null, v => W.corners.ss.melLow = v);
+bindSlider('ss-mel-high', null, v => W.corners.ss.melHigh = v);
+
+// Glow+Play
+bindSlider('fp-bell-density', null, v => W.corners.fp.bellDensity = v/100, v => v+'%');
+bindSlider('fp-bell-reg', null, v => W.corners.fp.bellReg = v);
+
+// Glow+Sleep
+bindSlider('fs-pad', null, v => W.corners.fs.pad = v/100, v => v+'%');
+bindSlider('fs-noise', null, v => W.corners.fs.noise = v/100, v => v+'%');
+
+// Mix
+bindSlider('mix-musicbox', null, v => W.mix.musicbox = v/100, v => v+'%');
+bindSlider('mix-vocal', null, v => W.mix.vocal = v/100, v => v+'%');
+bindSlider('mix-bell', null, v => W.mix.bell = v/100, v => v+'%');
+bindSlider('mix-pad', null, v => W.mix.pad = v/100, v => v+'%');
+bindSlider('mix-bass', null, v => W.mix.bass = v/100, v => v+'%');
+bindSlider('mix-kick', null, v => W.mix.kick = v/100, v => v+'%');
+bindSlider('mix-master', null, v => W.mix.master = v/100, v => v+'%');
+
+// FX
+bindSlider('fx-mel-reverb', null, v => W.fx.melReverb = v/100, v => v+'%');
+bindSlider('fx-decay-min', null, v => W.fx.decayMin = v, v => v+'s');
+bindSlider('fx-decay-max', null, v => W.fx.decayMax = v, v => v+'s');
+bindSlider('fx-fb-min', null, v => W.fx.fbMin = v/100, v => v+'%');
+bindSlider('fx-fb-max', null, v => W.fx.fbMax = v/100, v => v+'%');
+bindSlider('fx-filt-min', null, v => W.fx.filtMin = v);
+bindSlider('fx-filt-max', null, v => W.fx.filtMax = v);
+
+// Colors
+['sp','fp','ss','fs'].forEach(c => {
+  document.getElementById('color-' + c).addEventListener('input', e => {
+    W.colors[c] = e.target.value;
+  });
+});
+
+// Meta
+document.getElementById('world-name').addEventListener('input', e => W.meta.name = e.target.value);
+document.getElementById('world-artist').addEventListener('input', e => W.meta.artist = e.target.value);
+
+// ═════════════════════════════
+// EXPORT
+// ═════════════════════════════
+document.getElementById('export-btn').addEventListener('click', () => {
+  const json = JSON.stringify(W, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = (W.meta.name || 'world').toLowerCase().replace(/\s+/g, '-') + '.json';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ═════════════════════════════
+// XY PAD
+// ═════════════════════════════
+let xVal = 0.5, yVal = 0.5;
+let audioStarted = false, isDragging = false;
+const padArea = document.getElementById('pad-area');
+const ball = document.getElementById('ball');
+
+function lerp(a,b,t) { return a+(b-a)*t; }
+function pick(a) { return a[Math.floor(Math.random()*a.length)]; }
+function midiToFreq(m) { return 440*Math.pow(2,(m-69)/12); }
+
+function updatePadVisuals() {
+  const rect = padArea.getBoundingClientRect();
+  ball.style.left = (xVal * rect.width) + 'px';
+  ball.style.top = ((1 - yVal) * rect.height) + 'px';
+
+  const bgL = yVal > 0.3 ? lerp(0.08, 0.95, (yVal-0.3)/0.7) : 0.08;
+  padArea.style.backgroundColor = `hsl(${(xVal*60+Date.now()/80)%360}, ${lerp(20,60,yVal)}%, ${bgL*100}%)`;
+
+  document.getElementById('xy-readout').textContent = `x: ${xVal.toFixed(2)} y: ${yVal.toFixed(2)}`;
+  document.getElementById('xy-readout').style.color = yVal > 0.5 ? '#333' : '#666';
+}
+
+function getXY(e) {
+  const rect = padArea.getBoundingClientRect();
+  const cx = e.touches ? e.touches[0].clientX : e.clientX;
+  const cy = e.touches ? e.touches[0].clientY : e.clientY;
+  return {
+    x: Math.max(0, Math.min(1, (cx - rect.left) / rect.width)),
+    y: Math.max(0, Math.min(1, 1 - (cy - rect.top) / rect.height))
+  };
+}
+
+padArea.addEventListener('mousedown', e => { isDragging = true; const p = getXY(e); xVal = p.x; yVal = p.y; updatePadVisuals(); });
+padArea.addEventListener('touchstart', e => { e.preventDefault(); isDragging = true; const p = getXY(e); xVal = p.x; yVal = p.y; updatePadVisuals(); }, {passive:false});
+window.addEventListener('mousemove', e => { if(!isDragging) return; const p = getXY(e); xVal = p.x; yVal = p.y; updatePadVisuals(); });
+window.addEventListener('touchmove', e => { if(!isDragging) return; e.preventDefault(); const p = getXY(e); xVal = p.x; yVal = p.y; updatePadVisuals(); }, {passive:false});
+window.addEventListener('mouseup', () => isDragging = false);
+window.addEventListener('touchend', () => isDragging = false);
+
+// Animate bg color drift
+(function drift() { if(!isDragging) updatePadVisuals(); requestAnimationFrame(drift); })();
+
+// ═════════════════════════════
+// AUDIO ENGINE (reads from W)
+// ═════════════════════════════
+let musicBoxSynth, vocalSynth, bellSynth, padSynth, bassSynth;
+let noiseSynth, kickSynth, hihatSynth, rimSynth;
+let mainLoop, masterReverb, masterDelay, masterFilter, masterComp, masterGain;
+let melodyReverb, noiseFilter;
+
+// Shared musical state
+let chordIndex = 0, currentScale = [0,2,4,7,9];
+let currentPadNotes = [60,64,67], currentBassNote = 48;
+
+// Chord progressions (use W.corners scales)
+function getChords(corner) {
+  const scale = W.corners[corner].scale;
+  // Generate simple triads from the scale
+  const root = corner === 'sp' ? 60 : corner === 'ss' ? 57 : corner === 'fp' ? 60 : 48;
+  const bases = [0, 3, 4, 5]; // I, IV-ish, V-ish, vi-ish positions in scale
+  return bases.map(idx => {
+    const r = root + (scale[idx % scale.length] || 0);
+    const third = r + (scale[(idx+2) % scale.length] || 4);
+    const fifth = r + (scale[(idx+4) % scale.length] || 7);
+    const seventh = corner !== 'sp' ? r + (scale[(idx+5) % scale.length] || 10) : null;
+    return {
+      pad: seventh ? [r, third, fifth, seventh] : [r, third, fifth],
+      bass: r - 12,
+      scale: scale
+    };
+  });
+}
+
+function advanceChord(time) {
+  const x = xVal, y = yVal;
+  const corner = x < 0.5 ? (y >= 0.5 ? 'sp' : 'ss') : (y >= 0.5 ? 'fp' : 'fs');
+  const chords = getChords(corner);
+  chordIndex = (chordIndex + 1) % chords.length;
+  const ch = chords[chordIndex];
+
+  currentScale = ch.scale;
+  currentPadNotes = ch.pad;
+  currentBassNote = ch.bass;
+
+  padSynth.releaseAll();
+  const padVol = lerp(0.2, 0.5, x*0.5 + (1-y)*0.5) * W.mix.pad * 2;
+  padSynth.triggerAttack(ch.pad.map(midiToFreq), time, padVol);
+
+  bassSynth.triggerRelease(time);
+  const bassVol = lerp(0.2, 0.5, 1-y) * W.mix.bass * 2;
+  bassSynth.triggerAttackRelease(midiToFreq(ch.bass), '1n', time, bassVol);
+}
+
+document.getElementById('start-btn').addEventListener('click', () => {
+  if (audioStarted) return;
+  audioStarted = true;
+  document.getElementById('start-btn').style.display = 'none';
+  Tone.start();
+
+  // FX
+  masterReverb = new Tone.Reverb({ decay: 4, wet: 0.3 }).toDestination();
+  masterDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.15, wet: 0.1 }).connect(masterReverb);
+  masterComp = new Tone.Compressor({ threshold: -18, ratio: 3 }).connect(masterDelay);
+  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass' }).connect(masterComp);
+  masterGain = new Tone.Gain(0.6).connect(masterFilter);
+  melodyReverb = new Tone.Reverb({ decay: 2.5, wet: W.fx.melReverb }).connect(masterGain);
+
+  // Synths
+  musicBoxSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'custom', partials: [1,0.8,0.4,0.2,0.1] },
+    envelope: { attack: 0.002, decay: 0.5, sustain: 0.02, release: 1.2 }, volume: -8,
+  }).connect(melodyReverb);
+
+  vocalSynth = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 2.01, modulationIndex: 1.5,
+    oscillator: { type: 'triangle' }, modulation: { type: 'sine' },
+    envelope: { attack: 0.15, decay: 1.8, sustain: 0.4, release: 3 },
+    modulationEnvelope: { attack: 0.3, decay: 0.8, sustain: 0.3, release: 2 }, volume: -12,
+  }).connect(melodyReverb);
+
+  bellSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 2.5, sustain: 0, release: 4 }, volume: -16,
+  }).connect(melodyReverb);
+
+  padSynth = new Tone.PolySynth(Tone.FMSynth, {
+    harmonicity: 1.005, modulationIndex: 0.5,
+    oscillator: { type: 'sine' }, modulation: { type: 'triangle' },
+    envelope: { attack: 4, decay: 3, sustain: 0.7, release: 6 },
+    modulationEnvelope: { attack: 5, decay: 4, sustain: 0.5, release: 6 }, volume: -18,
+  }).connect(masterGain);
+
+  bassSynth = new Tone.Synth({
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.05, decay: 1.5, sustain: 0.3, release: 2 }, volume: -16,
+  }).connect(masterGain);
+
+  kickSynth = new Tone.MembraneSynth({
+    pitchDecay: 0.04, octaves: 3,
+    envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.3 }, volume: -18,
+  }).connect(masterGain);
+
+  hihatSynth = new Tone.MetalSynth({
+    frequency: 300, envelope: { attack: 0.001, decay: 0.08, release: 0.02 },
+    harmonicity: 5.1, modulationIndex: 20, resonance: 6000, octaves: 1.5, volume: -28,
+  }).connect(masterGain);
+
+  rimSynth = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.02 }, volume: -26,
+  }).connect(new Tone.Filter({ frequency: 3000, type: 'bandpass' }).connect(masterGain));
+
+  noiseFilter = new Tone.Filter({ frequency: 600, type: 'lowpass' }).connect(masterGain);
+  noiseSynth = new Tone.Noise({ type: 'pink', volume: -60 }).connect(noiseFilter);
+  noiseSynth.start();
+
+  // ─── MASTER LOOP ───
+  let step = 0, lastMelNote = -1;
+
+  mainLoop = new Tone.Loop(time => {
+    const x = xVal, y = yVal;
+    const STEPS_PER_BAR = 16;
+    const beatInBar = step % STEPS_PER_BAR;
+    const barInChord = Math.floor((step % (STEPS_PER_BAR * W.barsPerChord)) / STEPS_PER_BAR);
+
+    // Chord change
+    if (beatInBar === 0 && barInChord === 0) advanceChord(time);
+
+    const singAmt = Math.max(0, 1 - x*2);
+    const floatAmt = Math.max(0, x*2 - 1);
+    const energy = Math.max(0, (y - 0.15) / 0.85);
+
+    // Kick
+    if (energy > 0.1 && W.corners.sp.kick > 0) {
+      const kv = lerp(0.15, 0.5, energy) * lerp(1, 0.4, x) * W.mix.kick * 2;
+      if (beatInBar === 0 || (beatInBar === 8 && energy > 0.3)) {
+        kickSynth.triggerAttackRelease(lerp(52, 62, y), '16n', time, kv);
+      }
+    }
+
+    // Hihat
+    if (energy > 0.15 && W.corners.sp.hat > 0) {
+      const isE = beatInBar % 2 === 0;
+      const hhP = isE ? energy * 0.8 : energy * 0.3;
+      if (Math.random() < hhP * W.corners.sp.hat) {
+        hihatSynth.triggerAttackRelease('32n', time, lerp(0.04, 0.15, energy) * lerp(1, 0.3, x));
+      }
+    }
+
+    // Rim
+    if (energy > 0.4 && (beatInBar===3||beatInBar===7||beatInBar===11)) {
+      if (Math.random() < energy*0.4*lerp(1,0.2,x)) rimSynth.triggerAttackRelease('32n', time, 0.15*energy);
+    }
+
+    // Melody on 8ths
+    const isEighth = beatInBar % 2 === 0;
+    if (isEighth) {
+      const eighth = beatInBar / 2;
+
+      // Hum+Play
+      if (singAmt > 0 && y > 0.3) {
+        const pa = (y-0.3)/0.7;
+        let prob = eighth===0?0.95 : eighth===4?0.8 : (eighth%2===0?0.55:0.15*pa);
+        prob *= singAmt * W.corners.sp.melDensity * lerp(0.6, 1.3, pa);
+        if (Math.random() < prob) {
+          const oct = Math.round(lerp(W.corners.sp.melLow, W.corners.sp.melHigh, pa));
+          let note = oct + pick(currentScale);
+          if (lastMelNote > 0 && Math.abs(note-lastMelNote) > 5 && Math.random() > 0.35) {
+            const opts = currentScale.map(s=>oct+s).sort((a,b)=>Math.abs(a-lastMelNote)-Math.abs(b-lastMelNote));
+            note = opts[0];
+          }
+          musicBoxSynth.triggerAttackRelease(midiToFreq(note), eighth===0?'8n':'16n', time, lerp(0.25,0.5,pa)*singAmt*W.mix.musicbox*2);
+          lastMelNote = note;
+        }
+      }
+
+      // Hum+Sleep
+      if (singAmt > 0 && y < 0.65) {
+        const sa = Math.max(0, (0.65-y)/0.65);
+        const prob = (eighth===0?0.5:eighth===4?0.25:0.05) * sa * singAmt * W.corners.ss.melDensity * 2;
+        if (Math.random() < prob) {
+          const note = Math.round(lerp(W.corners.ss.melLow, W.corners.ss.melHigh, 1-sa)) + pick(currentScale);
+          vocalSynth.triggerAttackRelease(midiToFreq(note), lerp(0.8, 2.5, sa), time, lerp(0.1,0.3,sa)*singAmt*W.mix.vocal*2);
+          lastMelNote = note;
+        }
+      }
+
+      // Glow: bells
+      if (floatAmt > 0) {
+        const prob = W.corners.fp.bellDensity * floatAmt * lerp(0.3, 1, 1-y*0.3);
+        if (Math.random() < prob) {
+          const note = Math.round(W.corners.fp.bellReg + pick(currentScale));
+          bellSynth.triggerAttackRelease(midiToFreq(note), 0.02, time, lerp(0.06,0.2,floatAmt)*W.mix.bell*2);
+        }
+      }
+    }
+
+    step++;
+  }, '16n');
+
+  Tone.getTransport().bpm.value = lerp(W.tempo.sleep, W.tempo.play, 0.5);
+  Tone.getTransport().start();
+  mainLoop.start(0);
+
+  // Live update loop
+  setInterval(() => {
+    if (!audioStarted) return;
+    const x = xVal, y = yVal;
+    Tone.getTransport().bpm.rampTo(lerp(W.tempo.sleep, W.tempo.play, y) * lerp(1, W.tempo.glowMult, x), 2);
+    masterReverb.wet.rampTo(Math.min(lerp(0.12,0.55,x)+lerp(0.2,0,y), 0.7), 2);
+    masterDelay.wet.rampTo(lerp(0.03,0.28,x), 1.5);
+    masterDelay.feedback.rampTo(lerp(W.fx.fbMin, W.fx.fbMax, x), 1.5);
+    masterFilter.frequency.rampTo(lerp(W.fx.filtMin, W.fx.filtMax, y)*lerp(1,0.75,x), 1);
+    melodyReverb.wet.rampTo(W.fx.melReverb, 1);
+    masterGain.gain.rampTo(W.mix.master, 0.5);
+    noiseSynth.volume.rampTo(-60 + (1-y)*6 + x*6 + ((1-y)*x)*6*W.corners.fs.noise*4, 2);
+  }, 250);
+});
+</script>
+</body>
+</html>
