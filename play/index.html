@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>lil.audio</title>
+  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.min.js"></script>
+  <style>
+    @font-face {
+      font-family: 'ComicSans';
+      src: url('../fonts/comic-sans-bold.woff2') format('woff2');
+      font-weight: bold;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      overflow: hidden;
+      touch-action: none;
+      transition: background-color 2s ease;
+    }
+
+    /* Password screen */
+    #gate {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    #gate .logo {
+      font-size: 60px;
+      font-weight: bold;
+      color: #1a1a2e;
+    }
+    #gate input {
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: 20px;
+      padding: 12px 24px;
+      border: 3px solid #1a1a2e;
+      border-radius: 50px;
+      text-align: center;
+      outline: none;
+      background: transparent;
+      color: #1a1a2e;
+      letter-spacing: 0.1em;
+    }
+    #gate input::placeholder { color: #ccc; }
+    #gate .hint { font-size: 14px; opacity: 0.3; }
+    #gate.wrong input { border-color: #FF3B30; animation: shake 0.4s ease; }
+    @keyframes shake {
+      0%, 100% { transform: translateX(0); }
+      25% { transform: translateX(-8px); }
+      75% { transform: translateX(8px); }
+    }
+
+    /* Main app */
+    #app {
+      display: none;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      width: 100%;
+      height: 100vh;
+      position: relative;
+      user-select: none;
+    }
+
+    .mode-label {
+      font-size: clamp(14px, 3vw, 20px);
+      font-weight: bold;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      opacity: 0.4;
+      transition: opacity 0.5s;
+      position: absolute;
+    }
+    .mode-label.top { top: 8vh; }
+    .mode-label.bottom { bottom: 8vh; }
+
+    /* The dial */
+    #dial-container {
+      position: relative;
+      width: clamp(200px, 50vw, 320px);
+      height: clamp(200px, 50vw, 320px);
+    }
+
+    #dial-track {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      border: 4px solid rgba(0,0,0,0.08);
+      position: relative;
+    }
+
+    #dial-knob {
+      width: 60px;
+      height: 60px;
+      border-radius: 50%;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      cursor: grab;
+      transition: background-color 1s ease;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+    }
+    #dial-knob:active { cursor: grabbing; }
+
+    #dial-fill {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      border-radius: 0 0 50% 50%;
+      transition: height 0.1s ease;
+      opacity: 0.08;
+    }
+
+    /* Value display */
+    #dial-value {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(40px, 10vw, 70px);
+      font-weight: bold;
+      pointer-events: none;
+      opacity: 0.15;
+    }
+
+    /* Start prompt */
+    #start-prompt {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(18px, 4vw, 28px);
+      font-weight: bold;
+      opacity: 0.6;
+      animation: pulse 2s ease-in-out infinite;
+      cursor: pointer;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 0.2; }
+    }
+
+    /* Logo */
+    #app-logo {
+      position: absolute;
+      top: 3vh;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 28px;
+      font-weight: bold;
+      opacity: 0.2;
+    }
+
+    /* Status */
+    #status {
+      position: absolute;
+      bottom: 3vh;
+      font-size: 12px;
+      opacity: 0.15;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Password Gate -->
+  <div id="gate">
+    <div class="logo">lil</div>
+    <input id="pw" type="password" placeholder="•••••••" autofocus>
+    <div class="hint">v0.1</div>
+  </div>
+
+  <!-- Main App -->
+  <div id="app">
+    <div id="app-logo">lil</div>
+    <div class="mode-label top" id="label-play">play ☀</div>
+
+    <div id="dial-container">
+      <div id="dial-track">
+        <div id="dial-fill"></div>
+      </div>
+      <div id="dial-value"></div>
+      <div id="dial-knob"></div>
+      <div id="start-prompt">tap to begin</div>
+    </div>
+
+    <div class="mode-label bottom" id="label-sleep">sleep ☾</div>
+    <div id="status">generative · ever-evolving</div>
+  </div>
+
+<script>
+// ─── PASSWORD ───
+const PASS = 'bambient';
+const pwInput = document.getElementById('pw');
+const gate = document.getElementById('gate');
+const app = document.getElementById('app');
+
+pwInput.addEventListener('keydown', e => {
+  if (e.key === 'Enter') {
+    if (pwInput.value === PASS) {
+      gate.style.display = 'none';
+      app.style.display = 'flex';
+      initApp();
+    } else {
+      gate.classList.add('wrong');
+      pwInput.value = '';
+      setTimeout(() => gate.classList.remove('wrong'), 400);
+    }
+  }
+});
+
+// ─── APP STATE ───
+let dialValue = 0.5; // 0 = sleep, 1 = play
+let audioStarted = false;
+let isDragging = false;
+
+// ─── COLORS ───
+function lerpColor(a, b, t) {
+  const ah = parseInt(a.replace('#',''), 16);
+  const bh = parseInt(b.replace('#',''), 16);
+  const ar = (ah >> 16) & 0xff, ag = (ah >> 8) & 0xff, ab = ah & 0xff;
+  const br = (bh >> 16) & 0xff, bg = (bh >> 8) & 0xff, bb = bh & 0xff;
+  const rr = Math.round(ar + (br - ar) * t);
+  const rg = Math.round(ag + (bg - ag) * t);
+  const rb = Math.round(ab + (bb - ab) * t);
+  return `rgb(${rr},${rg},${rb})`;
+}
+
+const SLEEP_BG = '#0a0a1e';
+const PLAY_BG = '#FFF8E7';
+const SLEEP_KNOB = '#4a3f8a';
+const PLAY_KNOB = '#FF8C42';
+const SLEEP_TEXT = '#8888bb';
+const PLAY_TEXT = '#1a1a2e';
+
+function updateVisuals() {
+  const t = dialValue;
+  document.body.style.backgroundColor = lerpColor(SLEEP_BG, PLAY_BG, t);
+
+  const knob = document.getElementById('dial-knob');
+  knob.style.backgroundColor = lerpColor(SLEEP_KNOB, PLAY_KNOB, t);
+
+  const textColor = lerpColor(SLEEP_TEXT, PLAY_TEXT, t);
+  document.getElementById('dial-value').style.color = textColor;
+  document.getElementById('label-play').style.color = textColor;
+  document.getElementById('label-sleep').style.color = textColor;
+  document.getElementById('app-logo').style.color = textColor;
+  document.getElementById('status').style.color = textColor;
+  document.getElementById('dial-track').style.borderColor = lerpColor('#333355', '#ddd5c5', t);
+
+  // Position knob vertically within the dial
+  const container = document.getElementById('dial-container');
+  const rect = container.getBoundingClientRect();
+  const radius = rect.height / 2 - 30;
+  const angle = Math.PI / 2 + Math.PI * t; // bottom to top
+  const cx = rect.width / 2;
+  const cy = rect.height / 2;
+  const kx = cx + Math.cos(angle) * radius * 0.7;
+  const ky = cy - Math.sin(angle) * radius * 0.7;
+
+  knob.style.left = kx + 'px';
+  knob.style.top = ky + 'px';
+
+  document.getElementById('label-play').style.opacity = 0.2 + t * 0.5;
+  document.getElementById('label-sleep').style.opacity = 0.2 + (1 - t) * 0.5;
+}
+
+// ─── DIAL INTERACTION ───
+function initApp() {
+  updateVisuals();
+
+  const container = document.getElementById('dial-container');
+  const knob = document.getElementById('dial-knob');
+  const prompt = document.getElementById('start-prompt');
+
+  function getValueFromEvent(e) {
+    const rect = container.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+
+    // Map vertical position to 0-1 (top = 1/play, bottom = 0/sleep)
+    const dy = (cy - clientY) / (rect.height / 2);
+    return Math.max(0, Math.min(1, (dy + 1) / 2));
+  }
+
+  function onStart(e) {
+    e.preventDefault();
+    if (!audioStarted) {
+      startAudio();
+      audioStarted = true;
+      prompt.style.display = 'none';
+    }
+    isDragging = true;
+    onMove(e);
+  }
+
+  function onMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    dialValue = getValueFromEvent(e);
+    updateVisuals();
+    updateAudio();
+  }
+
+  function onEnd() {
+    isDragging = false;
+  }
+
+  container.addEventListener('mousedown', onStart);
+  container.addEventListener('touchstart', onStart, { passive: false });
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('mouseup', onEnd);
+  window.addEventListener('touchend', onEnd);
+}
+
+// ─── AUDIO ENGINE ───
+let melodySynth, padSynth, bassSynth, bellSynth, noiseSynth;
+let melodyLoop, rhythmLoop, bellLoop, driftInterval;
+let masterReverb, masterFilter, masterGain;
+let currentChordIndex = 0;
+
+// Musical scales and chords
+const PENTATONIC = [0, 2, 4, 7, 9]; // C pentatonic intervals
+const CHORDS = [
+  [60, 64, 67],  // C maj
+  [65, 69, 72],  // F maj
+  [67, 71, 74],  // G maj
+  [57, 60, 64],  // Am
+  [62, 65, 69],  // Dm
+];
+const SLEEP_CHORDS = [
+  [60, 64, 67, 71],  // Cmaj7
+  [65, 69, 72, 76],  // Fmaj7
+  [57, 60, 64, 67],  // Am7
+  [62, 66, 69, 73],  // D7
+];
+
+function midiToFreq(midi) {
+  return 440 * Math.pow(2, (midi - 69) / 12);
+}
+
+function pick(arr) {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function startAudio() {
+  Tone.start();
+
+  // Master chain
+  masterReverb = new Tone.Reverb({ decay: 4, wet: 0.3 }).toDestination();
+  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass' }).connect(masterReverb);
+  masterGain = new Tone.Gain(0.7).connect(masterFilter);
+
+  // ─── MELODY (music box) ───
+  melodySynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'triangle', partialCount: 3 },
+    envelope: { attack: 0.005, decay: 0.8, sustain: 0.1, release: 1.5 },
+    volume: -8,
+  }).connect(masterGain);
+
+  // ─── BELL / CHIME layer ───
+  bellSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'sine', partialCount: 1 },
+    envelope: { attack: 0.001, decay: 1.5, sustain: 0, release: 2 },
+    volume: -14,
+  }).connect(masterGain);
+
+  // ─── PAD (harmony drone) ───
+  padSynth = new Tone.PolySynth(Tone.Synth, {
+    oscillator: { type: 'sine' },
+    envelope: { attack: 3, decay: 2, sustain: 0.8, release: 5 },
+    volume: -16,
+  }).connect(masterGain);
+
+  // ─── BASS ───
+  bassSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.5, decay: 1, sustain: 0.6, release: 3 },
+    volume: -18,
+  }).connect(masterGain);
+
+  // ─── NOISE / TEXTURE ───
+  noiseSynth = new Tone.Noise({ type: 'pink', volume: -30 }).connect(
+    new Tone.Filter({ frequency: 800, type: 'lowpass' }).connect(masterGain)
+  );
+  noiseSynth.start();
+
+  // ─── MELODY LOOP ───
+  let melodyOctave = 72; // C5
+  let lastNote = 0;
+
+  melodyLoop = new Tone.Loop(time => {
+    const t = dialValue;
+    // Probability of playing decreases as we go to sleep
+    if (Math.random() > 0.3 + t * 0.5) return;
+
+    // Choose note from pentatonic scale
+    let interval;
+    do {
+      interval = pick(PENTATONIC);
+    } while (interval === lastNote && Math.random() > 0.3);
+    lastNote = interval;
+
+    // Octave range changes with dial
+    const baseOctave = Math.round(60 + t * 12 + (Math.random() - 0.5) * 12);
+    const note = midiToFreq(baseOctave + interval);
+
+    // Note duration longer in sleep mode
+    const dur = 0.1 + (1 - t) * 0.4;
+
+    melodySynth.triggerAttackRelease(note, dur, time, 0.3 + t * 0.4);
+  }, '8n');
+
+  // ─── BELL / CHIME LOOP ───
+  bellLoop = new Tone.Loop(time => {
+    const t = dialValue;
+    if (Math.random() > 0.2 + t * 0.3) return;
+
+    const interval = pick(PENTATONIC);
+    const octave = 84 + Math.floor(Math.random() * 12); // high register
+    const note = midiToFreq(octave + interval);
+    bellSynth.triggerAttackRelease(note, 0.05, time, 0.1 + (1 - t) * 0.15);
+  }, '4n');
+
+  // ─── RHYTHM LOOP ───
+  let rhythmStep = 0;
+  rhythmLoop = new Tone.Loop(time => {
+    const t = dialValue;
+    rhythmStep++;
+
+    // Only play rhythm when dial is toward play
+    if (t < 0.3) return;
+
+    const intensity = (t - 0.3) / 0.7; // 0 to 1 in play range
+
+    // Simple pattern
+    const isDownbeat = rhythmStep % 4 === 0;
+    const isUpbeat = rhythmStep % 2 === 0;
+
+    if (isDownbeat || (isUpbeat && intensity > 0.5) || (intensity > 0.8 && Math.random() > 0.5)) {
+      const note = midiToFreq(48 + pick([0, 7, 12]));
+      melodySynth.triggerAttackRelease(note, 0.05, time, 0.15 * intensity);
+    }
+  }, '16n');
+
+  // ─── CHORD DRIFT ───
+  function playChord() {
+    const t = dialValue;
+    const chords = t > 0.5 ? CHORDS : SLEEP_CHORDS;
+    currentChordIndex = (currentChordIndex + 1) % chords.length;
+    const chord = chords[currentChordIndex];
+
+    // Release previous notes
+    padSynth.releaseAll();
+    bassSynth.triggerRelease();
+
+    // Play new chord
+    const padNotes = chord.map(n => midiToFreq(n));
+    padSynth.triggerAttack(padNotes, Tone.now(), 0.3);
+
+    // Bass note
+    bassSynth.triggerAttack(midiToFreq(chord[0] - 12), Tone.now(), 0.5);
+  }
+
+  // Chord changes every 4-12 seconds depending on dial
+  function scheduleChord() {
+    const t = dialValue;
+    const interval = 4000 + (1 - t) * 8000 + Math.random() * 4000;
+    playChord();
+    driftInterval = setTimeout(scheduleChord, interval);
+  }
+
+  // ─── START EVERYTHING ───
+  Tone.getTransport().bpm.value = 100;
+  Tone.getTransport().start();
+  melodyLoop.start(0);
+  bellLoop.start(0);
+  rhythmLoop.start(0);
+  scheduleChord();
+  updateAudio();
+}
+
+function updateAudio() {
+  if (!audioStarted) return;
+  const t = dialValue;
+
+  // BPM: 60 (sleep) to 120 (play)
+  Tone.getTransport().bpm.value = 60 + t * 60;
+
+  // Reverb: wet 0.7 (sleep) to 0.2 (play)
+  masterReverb.wet.rampTo(0.7 - t * 0.5, 2);
+  masterReverb.decay = 2 + (1 - t) * 8;
+
+  // Filter: 1200 (sleep) to 8000 (play)
+  masterFilter.frequency.rampTo(1200 + t * 6800, 1);
+
+  // Melody volume: quieter in sleep
+  melodySynth.volume.rampTo(-12 + t * 6, 1);
+
+  // Bell volume: present in both but different character
+  bellSynth.volume.rampTo(-18 + (1 - t) * 4, 1);
+
+  // Pad volume: louder in sleep
+  padSynth.volume.rampTo(-20 + (1 - t) * 8, 2);
+
+  // Bass: subtle in play, more present in sleep
+  bassSynth.volume.rampTo(-22 + (1 - t) * 6, 2);
+
+  // Noise: more in sleep (like white noise / comfort)
+  noiseSynth.volume.rampTo(-35 + (1 - t) * 10, 2);
+
+  // Melody loop interval
+  melodyLoop.interval = t > 0.5 ? '8n' : '4n';
+  bellLoop.interval = t > 0.5 ? '4n' : '2n';
+}
+
+</script>
+</body>
+</html>
