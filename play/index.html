@@ -260,15 +260,19 @@ let yTarget = 0.5;
 let audioStarted = false;
 let appReady = false;
 let isDragging = false;
-const GLIDE_SPEED = 0.02; // ~3-4 seconds to reach target
+const GLIDE_SPEED = 0.02;
+let lastVisualUpdate = 0;
 
-// Smooth glide loop — only runs after app is initialized
+// Smooth glide loop — throttled to ~30fps for visuals, audio updates less often
 (function glideLoop() {
   if (appReady) {
     xVal += (xTarget - xVal) * GLIDE_SPEED;
     yVal += (yTarget - yVal) * GLIDE_SPEED;
-    if (audioStarted) updateAudio();
-    updateVisuals();
+    const now = performance.now();
+    if (now - lastVisualUpdate > 33) { // ~30fps
+      updateVisuals();
+      lastVisualUpdate = now;
+    }
   }
   requestAnimationFrame(glideLoop);
 })();
@@ -311,24 +315,12 @@ function updateVisuals() {
   const x = xVal, y = yVal;
 
   // Background: deep black at sleep, bright shifting colors at play
-  const bgSleep = bilinearHex('#080810', '#060a14', '#080810', '#060a14', x, 0);
-  // Play side: vivid colors that shift with x position
-  const time01 = (Date.now() % 20000) / 20000; // slow 20s cycle
-  const hue = ((x * 60) + (time01 * 360)) % 360; // shifts with position + time
+  const time01 = (Date.now() % 20000) / 20000;
+  const hue = ((x * 60) + (time01 * 360)) % 360;
   const sat = lerp(70, 50, x);
-  const lit = lerp(88, 92, x);
-  const playBg = `hsl(${hue}, ${sat}%, ${lit}%)`;
-  // For lerp we need hex fallback — use bilinear for structure, HSL for play end
-  if (y > 0.5) {
-    const t = (y - 0.5) * 2; // 0 to 1 in top half
-    document.body.style.backgroundColor = playBg;
-    document.body.style.opacity = 1;
-    // Blend: below 0.5 is hex dark, above is HSL bright
-    const darkHex = bilinearHex('#080810', '#060a14', '#080810', '#060a14', x, 0);
-    document.body.style.background = `color-mix(in srgb, ${darkHex} ${Math.round((1-t)*100)}%, ${playBg} ${Math.round(t*100)}%)`;
-  } else {
-    document.body.style.backgroundColor = lerpColor(bgSleep, '#333340', y * 2);
-  }
+  // Lightness: 3% at sleep, up to 90% at play
+  const lit = lerp(3, 90, Math.pow(y, 1.5));
+  document.body.style.backgroundColor = `hsl(${hue}, ${sat}%, ${lit}%)`;
 
   // Ball color
   const ballColor = bilinearHex(C_TL, C_TR, C_BL, C_BR, x, y);
@@ -385,10 +377,15 @@ function initApp() {
   function onStart(e) {
     e.preventDefault();
     if (!audioStarted) {
-      startAudio();
-      audioStarted = true;
+      // MUST call Tone.start() directly in user gesture for iOS
+      Tone.start().then(() => {
+        startAudio();
+        audioStarted = true;
+        // Start audio param update interval (not every frame)
+        setInterval(() => { if (audioStarted) updateAudio(); }, 200);
+      });
       prompt.style.display = 'none';
-      document.getElementById('mute-btn').style.display = 'flex';
+      document.getElementById('mute-btn').style.display = 'block';
     }
     isDragging = true;
     onMove(e);
@@ -474,12 +471,14 @@ function startAudio() {
 
   // ─── SYNTHS ───
   musicBoxSynth = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 6,
     oscillator: { type: 'custom', partials: [1, 0.8, 0.4, 0.2, 0.1] },
     envelope: { attack: 0.002, decay: 0.5, sustain: 0.02, release: 1.2 },
     volume: -8,
   }).connect(melodyReverb);
 
   vocalSynth = new Tone.PolySynth(Tone.FMSynth, {
+    maxPolyphony: 4,
     harmonicity: 2.01, modulationIndex: 1.5,
     oscillator: { type: 'triangle' }, modulation: { type: 'sine' },
     envelope: { attack: 0.15, decay: 1.8, sustain: 0.4, release: 3 },
@@ -488,12 +487,14 @@ function startAudio() {
   }).connect(melodyReverb);
 
   bellSynth = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 4,
     oscillator: { type: 'sine' },
     envelope: { attack: 0.001, decay: 2.5, sustain: 0, release: 4 },
     volume: -16,
   }).connect(melodyReverb);
 
   padSynth = new Tone.PolySynth(Tone.FMSynth, {
+    maxPolyphony: 6,
     harmonicity: 1.005, modulationIndex: 0.5,
     oscillator: { type: 'sine' }, modulation: { type: 'triangle' },
     envelope: { attack: 4, decay: 3, sustain: 0.7, release: 6 },
