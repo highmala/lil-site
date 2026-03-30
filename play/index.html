@@ -101,6 +101,12 @@
       box-shadow: 0 0 30px rgba(255,255,255,0.15);
       transition: background-color 0.8s ease, box-shadow 0.8s ease;
       z-index: 10;
+      animation: breathe 3s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      50% { transform: translate(-50%, -50%) scale(1.12); opacity: 0.85; }
     }
 
     /* Glow trail */
@@ -430,12 +436,15 @@ function startAudio() {
   masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass', rolloff: -12 }).connect(masterComp);
   masterGain = new Tone.Gain(0.6).connect(masterFilter);
 
+  // ─── MELODY REVERB (dedicated send for melodic elements) ───
+  const melodyReverb = new Tone.Reverb({ decay: 2.5, wet: 0.3 }).connect(masterGain);
+
   // ─── SYNTHS ───
   musicBoxSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'custom', partials: [1, 0.8, 0.4, 0.2, 0.1] },
     envelope: { attack: 0.002, decay: 0.5, sustain: 0.02, release: 1.2 },
     volume: -8,
-  }).connect(masterGain);
+  }).connect(melodyReverb);
 
   vocalSynth = new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 2.01, modulationIndex: 1.5,
@@ -443,13 +452,13 @@ function startAudio() {
     envelope: { attack: 0.15, decay: 1.8, sustain: 0.4, release: 3 },
     modulationEnvelope: { attack: 0.3, decay: 0.8, sustain: 0.3, release: 2 },
     volume: -12,
-  }).connect(masterGain);
+  }).connect(melodyReverb);
 
   bellSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'sine' },
     envelope: { attack: 0.001, decay: 2.5, sustain: 0, release: 4 },
     volume: -16,
-  }).connect(masterGain);
+  }).connect(melodyReverb);
 
   padSynth = new Tone.PolySynth(Tone.FMSynth, {
     harmonicity: 1.005, modulationIndex: 0.5,
