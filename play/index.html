@@ -523,7 +523,8 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 function startAudio() {
   // ─── FX Chain (minimal for mobile) ───
   masterReverb = new Tone.Reverb({ decay: 3, wet: 0.25 }).toDestination();
-  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass', rolloff: -12 }).connect(masterReverb);
+  masterDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.09, wet: 0.05 }).connect(masterReverb);
+  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass', rolloff: -12 }).connect(masterDelay);
   masterGain = new Tone.Gain(0.6).connect(masterFilter);
 
   // ─── SYNTHS (all mono — minimal node count) ───
@@ -750,6 +751,8 @@ function updateAudio() {
   setParamValue(transport.bpm, lerp(55, 154, y) * lerp(1.0, 0.85, x), 0.1);
 
   setParamValue(masterReverb.wet, Math.min(lerp(0.1, 0.45, x) + lerp(0.15, 0, y), 0.55), 0.005);
+  setParamValue(masterDelay.wet, lerp(0.03, 0.25, x), 0.005);
+  setParamValue(masterDelay.feedback, lerp(0.09, 0.63, x), 0.005);
   setParamValue(masterFilter.frequency, lerp(700, 9000, y) * lerp(1.0, 0.75, x), 1);
 
   setParamValue(musicBoxSynth.volume, lerp(-6, -24, x) + lerp(-6, 4, y), 0.25);
