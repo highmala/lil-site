@@ -269,10 +269,25 @@ function bilinearHex(tl, tr, bl, br, x, y) {
 function updateVisuals() {
   const x = xVal, y = yVal;
 
-  // Background: gets darker toward sleep, lighter toward play
+  // Background: deep black at sleep, bright shifting colors at play
   const bgSleep = bilinearHex('#080810', '#060a14', '#080810', '#060a14', x, 0);
-  const bgPlay = bilinearHex('#FFF8E0', '#E8F8F8', '#FFF8E0', '#E8F8F8', x, 0);
-  document.body.style.backgroundColor = lerpColor(bgSleep, bgPlay, y);
+  // Play side: vivid colors that shift with x position
+  const time01 = (Date.now() % 20000) / 20000; // slow 20s cycle
+  const hue = ((x * 60) + (time01 * 360)) % 360; // shifts with position + time
+  const sat = lerp(70, 50, x);
+  const lit = lerp(88, 92, x);
+  const playBg = `hsl(${hue}, ${sat}%, ${lit}%)`;
+  // For lerp we need hex fallback — use bilinear for structure, HSL for play end
+  if (y > 0.5) {
+    const t = (y - 0.5) * 2; // 0 to 1 in top half
+    document.body.style.backgroundColor = playBg;
+    document.body.style.opacity = 1;
+    // Blend: below 0.5 is hex dark, above is HSL bright
+    const darkHex = bilinearHex('#080810', '#060a14', '#080810', '#060a14', x, 0);
+    document.body.style.background = `color-mix(in srgb, ${darkHex} ${Math.round((1-t)*100)}%, ${playBg} ${Math.round(t*100)}%)`;
+  } else {
+    document.body.style.backgroundColor = lerpColor(bgSleep, '#333340', y * 2);
+  }
 
   // Ball color
   const ballColor = bilinearHex(C_TL, C_TR, C_BL, C_BR, x, y);
@@ -293,6 +308,15 @@ function updateVisuals() {
   document.querySelectorAll('#grid .line').forEach(el => el.style.color = textColor);
   const prompt = document.getElementById('start-prompt');
   if (prompt) prompt.style.color = textColor;
+
+  // Start color drift animation if not running
+  if (!window._colorDrift) {
+    window._colorDrift = true;
+    (function drift() {
+      if (!isDragging) updateVisuals(); // keep colors shifting even when not touching
+      requestAnimationFrame(drift);
+    })();
+  }
 
   // Labels: brighter in sleep, dimmer in play
   const baseLabelOpacity = lerp(0.35, 0.08, y);
