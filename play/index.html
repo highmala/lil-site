@@ -238,15 +238,18 @@ let yVal = 0.5;
 let xTarget = 0.5;   // target (where user clicked/dragged)
 let yTarget = 0.5;
 let audioStarted = false;
+let appReady = false;
 let isDragging = false;
 const GLIDE_SPEED = 0.02; // ~3-4 seconds to reach target
 
-// Smooth glide loop
+// Smooth glide loop — only runs after app is initialized
 (function glideLoop() {
-  xVal += (xTarget - xVal) * GLIDE_SPEED;
-  yVal += (yTarget - yVal) * GLIDE_SPEED;
-  if (audioStarted) updateAudio();
-  updateVisuals();
+  if (appReady) {
+    xVal += (xTarget - xVal) * GLIDE_SPEED;
+    yVal += (yTarget - yVal) * GLIDE_SPEED;
+    if (audioStarted) updateAudio();
+    updateVisuals();
+  }
   requestAnimationFrame(glideLoop);
 })();
 
@@ -339,6 +342,7 @@ function updateVisuals() {
 
 // ─── INTERACTION ───
 function initApp() {
+  appReady = true;
   updateVisuals();
 
   const field = document.getElementById('field');
