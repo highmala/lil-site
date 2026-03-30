@@ -1,0 +1,91 @@
+{
+  "meta": {
+    "name": "test tuning",
+    "artist": "ville"
+  },
+  "tempo": {
+    "sleep": 55,
+    "play": 154,
+    "glowMult": 0.85
+  },
+  "barsPerChord": 3,
+  "corners": {
+    "sp": {
+      "scale": [
+        0,
+        2,
+        4,
+        7,
+        9
+      ],
+      "melDensity": 0.75,
+      "melLow": 55,
+      "melHigh": 88,
+      "kick": 0.6,
+      "hat": 0.65,
+      "swing": 0.32
+    },
+    "ss": {
+      "scale": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        11
+      ],
+      "melDensity": 0.79,
+      "melLow": 66,
+      "melHigh": 68
+    },
+    "fp": {
+      "scale": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        11
+      ],
+      "bellDensity": 0.59,
+      "bellReg": 91
+    },
+    "fs": {
+      "scale": [
+        0,
+        2,
+        4,
+        7,
+        9
+      ],
+      "pad": 0.74,
+      "noise": 0.27
+    }
+  },
+  "mix": {
+    "musicbox": 0.45,
+    "vocal": 0.66,
+    "bell": 0.43,
+    "pad": 0.55,
+    "bass": 0.6,
+    "kick": 0.55,
+    "master": 0.7
+  },
+  "fx": {
+    "melReverb": 0.41,
+    "decayMin": 2,
+    "decayMax": 13,
+    "fbMin": 0.09,
+    "fbMax": 0.63,
+    "filtMin": 700,
+    "filtMax": 9000
+  },
+  "colors": {
+    "sp": "#FFD60A",
+    "fp": "#4ECDC4",
+    "ss": "#FF6B6B",
+    "fs": "#5E5CE6"
+  }
+}

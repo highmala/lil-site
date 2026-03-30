@@ -490,26 +490,27 @@ let currentPadNotes = [60, 64, 67];  // current pad chord
 let currentBassNote = 48;            // current bass root
 
 // ─── CHORD PROGRESSIONS (all as { pad, bass, scale }) ───
+// ─── Ville's test tuning ───
 const SING_PLAY = [
-  { pad: [60, 64, 67], bass: 48, scale: [0, 2, 4, 7, 9] },     // C maj, C penta
-  { pad: [65, 69, 72], bass: 53, scale: [0, 2, 4, 7, 9] },     // F maj, F penta
-  { pad: [67, 71, 74], bass: 55, scale: [0, 2, 4, 7, 9] },     // G maj, G penta
-  { pad: [57, 60, 64], bass: 45, scale: [0, 2, 4, 7, 9] },     // Am,   A min penta
+  { pad: [60, 64, 67], bass: 48, scale: [0, 2, 4, 7, 9] },     // C maj penta
+  { pad: [65, 69, 72], bass: 53, scale: [0, 2, 4, 7, 9] },     // F maj penta
+  { pad: [67, 71, 74], bass: 55, scale: [0, 2, 4, 7, 9] },     // G maj penta
+  { pad: [57, 60, 64], bass: 45, scale: [0, 2, 4, 7, 9] },     // Am penta
 ];
 const SING_SLEEP = [
-  { pad: [57, 60, 64, 67], bass: 45, scale: [0, 3, 5, 7, 10] },   // Am7
-  { pad: [60, 63, 67, 70], bass: 48, scale: [0, 3, 5, 7, 10] },   // Cm7
-  { pad: [65, 68, 72, 75], bass: 53, scale: [0, 3, 5, 7, 10] },   // Fm7
-  { pad: [58, 62, 65, 69], bass: 46, scale: [0, 2, 4, 7, 9] },    // Bbmaj7
+  { pad: [57, 60, 64, 67], bass: 45, scale: [0, 2, 4, 6, 7, 9, 11] },  // Am7 lydian
+  { pad: [60, 64, 67, 71], bass: 48, scale: [0, 2, 4, 6, 7, 9, 11] },  // Cmaj7 lydian
+  { pad: [65, 69, 72, 76], bass: 53, scale: [0, 2, 4, 6, 7, 9, 11] },  // Fmaj7 lydian
+  { pad: [62, 66, 69, 73], bass: 50, scale: [0, 2, 4, 6, 7, 9, 11] },  // Dmaj7 lydian
 ];
 const FLOAT_PLAY = [
-  { pad: [60, 64, 67, 71], bass: 48, scale: [0, 2, 4, 6, 7, 9, 11] }, // Cmaj7, lydian
+  { pad: [60, 64, 67, 71], bass: 48, scale: [0, 2, 4, 6, 7, 9, 11] }, // Cmaj7 lydian
   { pad: [62, 66, 69, 73], bass: 50, scale: [0, 2, 4, 6, 7, 9, 11] }, // Dmaj7
   { pad: [64, 68, 71, 76], bass: 52, scale: [0, 2, 4, 6, 7, 9, 11] }, // Emaj7
   { pad: [67, 71, 74, 78], bass: 55, scale: [0, 2, 4, 6, 7, 9, 11] }, // Gmaj7
 ];
 const FLOAT_SLEEP = [
-  { pad: [48, 55, 60, 67], bass: 36, scale: [0, 2, 4, 7, 9] },  // open C
+  { pad: [48, 55, 60, 67], bass: 36, scale: [0, 2, 4, 7, 9] },  // open C penta
   { pad: [50, 57, 62, 69], bass: 38, scale: [0, 2, 4, 7, 9] },  // open D
   { pad: [53, 60, 65, 72], bass: 41, scale: [0, 2, 4, 7, 9] },  // open F
   { pad: [45, 52, 57, 64], bass: 33, scale: [0, 2, 4, 7, 9] },  // open A
@@ -620,7 +621,7 @@ function startAudio() {
   let step = 0; // counts 8th notes
   let lastMelNote = -1;
   const STEPS_PER_BAR = 8; // 8 eighths = 1 bar of 4/4
-  const BARS_PER_CHORD = 2;
+  const BARS_PER_CHORD = 3;
 
   mainLoop = new Tone.Loop(time => {
     const x = xVal, y = yVal;
@@ -746,7 +747,7 @@ function updateAudio() {
   const x = xVal, y = yVal;
 
   // Direct .value sets — no rampTo to prevent automation timeline accumulation
-  setParamValue(transport.bpm, lerp(55, 115, y) * lerp(1.0, 0.85, x), 0.1);
+  setParamValue(transport.bpm, lerp(55, 154, y) * lerp(1.0, 0.85, x), 0.1);
 
   setParamValue(masterReverb.wet, Math.min(lerp(0.1, 0.45, x) + lerp(0.15, 0, y), 0.55), 0.005);
   setParamValue(masterFilter.frequency, lerp(700, 9000, y) * lerp(1.0, 0.75, x), 1);
