@@ -85,10 +85,10 @@
       transition: opacity 0.8s, color 1.5s;
       pointer-events: none;
     }
-    .corner-label.tl { top: 5vh; left: 5vw; }
-    .corner-label.tr { top: 5vh; right: 5vw; text-align: right; }
-    .corner-label.bl { bottom: 5vh; left: 5vw; }
-    .corner-label.br { bottom: 5vh; right: 5vw; text-align: right; }
+    .corner-label.top { top: 4vh; left: 50%; transform: translateX(-50%); }
+    .corner-label.bottom { bottom: 4vh; left: 50%; transform: translateX(-50%); }
+    .corner-label.left { left: 4vw; top: 50%; transform: translateY(-50%); }
+    .corner-label.right { right: 4vw; top: 50%; transform: translateY(-50%); }
 
     /* The ball/cursor */
     #ball {
@@ -170,9 +170,8 @@
     /* Mute button */
     #mute-btn {
       position: absolute;
-      bottom: 5vh;
-      left: 50%;
-      transform: translateX(-50%);
+      bottom: 4vh;
+      right: 4vw;
       border: none;
       background: none;
       font-family: 'ComicSans', 'Comic Sans MS', cursive;
@@ -216,10 +215,10 @@
 
     <div id="app-logo">lil</div>
 
-    <div class="corner-label tl" id="lbl-tl">hum · play</div>
-    <div class="corner-label tr" id="lbl-tr">glow · play</div>
-    <div class="corner-label bl" id="lbl-bl">hum · sleep</div>
-    <div class="corner-label br" id="lbl-br">glow · sleep</div>
+    <div class="corner-label top" id="lbl-top">play</div>
+    <div class="corner-label bottom" id="lbl-bottom">sleep</div>
+    <div class="corner-label left" id="lbl-left">hum</div>
+    <div class="corner-label right" id="lbl-right">glow</div>
 
     <div id="field">
       <div id="start-prompt">tap anywhere</div>
@@ -353,12 +352,16 @@ function updateVisuals() {
 
   // Color drift is handled by the glide loop
 
-  // Labels: brighter in sleep, dimmer in play
-  const baseLabelOpacity = lerp(0.35, 0.08, y);
+  // Labels: brighter in sleep, dimmer in play. Highlight the nearest axis label.
+  const baseLabelOpacity = lerp(0.3, 0.08, y);
   document.querySelectorAll('.corner-label').forEach(el => el.style.opacity = baseLabelOpacity);
-  const nearest = x < 0.5 ? (y > 0.5 ? 'tl' : 'bl') : (y > 0.5 ? 'tr' : 'br');
-  const dist = Math.sqrt(Math.pow(x < 0.5 ? x : 1 - x, 2) + Math.pow(y > 0.5 ? 1 - y : y, 2));
-  document.getElementById('lbl-' + nearest).style.opacity = baseLabelOpacity + (1 - dist) * 0.35;
+  document.getElementById('lbl-top').style.opacity = baseLabelOpacity + y * 0.3;
+  document.getElementById('lbl-bottom').style.opacity = baseLabelOpacity + (1 - y) * 0.3;
+  document.getElementById('lbl-left').style.opacity = baseLabelOpacity + (1 - x) * 0.3;
+  document.getElementById('lbl-right').style.opacity = baseLabelOpacity + x * 0.3;
+  // Mute button color
+  const muteBtn = document.getElementById('mute-btn');
+  if (muteBtn) muteBtn.style.color = textColor;
 }
 
 // ─── INTERACTION ───
