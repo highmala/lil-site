@@ -465,70 +465,67 @@ function lerp(a, b, t) { return a + (b - a) * t; }
 function startAudio() {
   Tone.start();
 
-  // ─── FX Chain ───
-  masterReverb = new Tone.Reverb({ decay: 4, wet: 0.3 }).toDestination();
-  masterDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.15, wet: 0.1 }).connect(masterReverb);
-  masterComp = new Tone.Compressor({ threshold: -18, ratio: 3, attack: 0.05, release: 0.2 }).connect(masterDelay);
-  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass', rolloff: -12 }).connect(masterComp);
+  // ─── FX Chain (minimal for mobile) ───
+  masterReverb = new Tone.Reverb({ decay: 3, wet: 0.25 }).toDestination();
+  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass', rolloff: -12 }).connect(masterReverb);
   masterGain = new Tone.Gain(0.6).connect(masterFilter);
 
-  // ─── MELODY REVERB (dedicated send for melodic elements) ───
-  const melodyReverb = new Tone.Reverb({ decay: 1.8, wet: 0.25 }).connect(masterGain);
-
-  // ─── SYNTHS ───
+  // ─── SYNTHS (all mono — minimal node count) ───
   musicBoxSynth = new Tone.Synth({
-    oscillator: { type: 'custom', partials: [1, 0.8, 0.4, 0.2, 0.1] },
-    envelope: { attack: 0.002, decay: 0.4, sustain: 0, release: 0.8 },
+    oscillator: { type: 'triangle8' },
+    envelope: { attack: 0.002, decay: 0.35, sustain: 0, release: 0.5 },
     volume: -8,
-  }).connect(melodyReverb);
+  }).connect(masterGain);
 
-  vocalSynth = new Tone.FMSynth({
-    harmonicity: 2.01, modulationIndex: 1.5,
-    oscillator: { type: 'triangle' }, modulation: { type: 'sine' },
-    envelope: { attack: 0.15, decay: 1.2, sustain: 0.2, release: 1.5 },
-    modulationEnvelope: { attack: 0.3, decay: 0.8, sustain: 0.3, release: 1.5 },
+  vocalSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.15, decay: 1.0, sustain: 0.15, release: 1.0 },
     volume: -12,
-  }).connect(melodyReverb);
+  }).connect(masterGain);
 
   bellSynth = new Tone.Synth({
     oscillator: { type: 'sine' },
-    envelope: { attack: 0.001, decay: 1.5, sustain: 0, release: 2 },
+    envelope: { attack: 0.001, decay: 1.0, sustain: 0, release: 1.0 },
     volume: -16,
-  }).connect(melodyReverb);
-
-  padSynth = new Tone.PolySynth(Tone.Synth, {
-    maxPolyphony: 4,
-    oscillator: { type: 'sine' },
-    envelope: { attack: 2, decay: 2, sustain: 0.6, release: 3 },
-    volume: -18,
   }).connect(masterGain);
+
+  // Pad: 3 simple oscillators instead of PolySynth
+  const padGain = new Tone.Gain(0.3).connect(masterGain);
+  const padOsc1 = new Tone.Synth({ oscillator: {type:'sine'}, envelope: {attack:2,decay:1,sustain:0.5,release:2}, volume:-20 }).connect(padGain);
+  const padOsc2 = new Tone.Synth({ oscillator: {type:'sine'}, envelope: {attack:2,decay:1,sustain:0.5,release:2}, volume:-20 }).connect(padGain);
+  const padOsc3 = new Tone.Synth({ oscillator: {type:'sine'}, envelope: {attack:2,decay:1,sustain:0.5,release:2}, volume:-22 }).connect(padGain);
+  padSynth = { voices: [padOsc1, padOsc2, padOsc3] };
 
   bassSynth = new Tone.Synth({
     oscillator: { type: 'triangle' },
-    envelope: { attack: 0.05, decay: 1.5, sustain: 0.3, release: 2 },
+    envelope: { attack: 0.05, decay: 1.0, sustain: 0.2, release: 1.0 },
     volume: -16,
   }).connect(masterGain);
 
-  kickSynth = new Tone.MembraneSynth({
-    pitchDecay: 0.04, octaves: 3,
-    envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.3 },
+  // Kick: simple synth instead of MembraneSynth (lighter)
+  kickSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.1 },
     volume: -18,
   }).connect(masterGain);
 
-  hihatSynth = new Tone.MetalSynth({
-    frequency: 300, envelope: { attack: 0.001, decay: 0.08, release: 0.02 },
-    harmonicity: 5.1, modulationIndex: 20, resonance: 6000, octaves: 1.5,
+  // Hihat: filtered noise burst (much lighter than MetalSynth)
+  const hhFilter = new Tone.Filter({ frequency: 8000, type: 'highpass' }).connect(masterGain);
+  hihatSynth = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.01 },
     volume: -28,
-  }).connect(masterGain);
+  }).connect(hhFilter);
 
+  // Rim: reuse a simple click
   rimSynth = new Tone.NoiseSynth({
     noise: { type: 'white' },
-    envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.02 },
+    envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 },
     volume: -26,
   }).connect(new Tone.Filter({ frequency: 3000, type: 'bandpass' }).connect(masterGain));
 
   noiseFilter = new Tone.Filter({ frequency: 600, type: 'lowpass' }).connect(masterGain);
-  noiseSynth = new Tone.Noise({ type: 'pink', volume: -34 }).connect(noiseFilter);
+  noiseSynth = new Tone.Noise({ type: 'pink', volume: -60 }).connect(noiseFilter);
   noiseSynth.start();
 
   // ─── CHOOSE CHORD SET BASED ON POSITION ───
@@ -550,11 +547,13 @@ function startAudio() {
     currentPadNotes = ch.pad;
     currentBassNote = ch.bass;
 
-    // Play pad — release all old voices first, small delay to let release happen
-    padSynth.releaseAll(time);
+    // Play pad — 3 fixed voices, no accumulation possible
     const x = xVal, y = yVal;
-    const padVol = lerp(0.2, 0.5, x * 0.5 + (1 - y) * 0.5);
-    padSynth.triggerAttack(ch.pad.map(midiToFreq), time + 0.1, padVol);
+    const padVol = lerp(0.15, 0.4, x * 0.5 + (1 - y) * 0.5);
+    const padNotes = ch.pad.map(midiToFreq);
+    padSynth.voices.forEach((v, i) => {
+      if (padNotes[i]) v.triggerAttackRelease(padNotes[i], '2n', time + 0.05, padVol);
+    });
 
     // Play bass — same root, same time
     bassSynth.triggerRelease(time);
@@ -563,14 +562,14 @@ function startAudio() {
   }
 
   // ─── SINGLE MASTER LOOP — 16th note resolution ───
-  let step = 0; // counts 16th notes
+  let step = 0; // counts 8th notes
   let lastMelNote = -1;
-  const STEPS_PER_BAR = 16; // 16 sixteenths = 1 bar of 4/4
-  const BARS_PER_CHORD = 2; // chord changes every 2 bars
+  const STEPS_PER_BAR = 8; // 8 eighths = 1 bar of 4/4
+  const BARS_PER_CHORD = 2;
 
   mainLoop = new Tone.Loop(time => {
     const x = xVal, y = yVal;
-    const beatInBar = step % STEPS_PER_BAR;       // 0-15
+    const beatInBar = step % STEPS_PER_BAR;       // 0-7
     const barInChord = Math.floor((step % (STEPS_PER_BAR * BARS_PER_CHORD)) / STEPS_PER_BAR);
 
     // ═══ CHORD CHANGE on beat 0 of every 2 bars ═══
@@ -583,42 +582,35 @@ function startAudio() {
     const floatAmt = Math.max(0, x * 2 - 1);
     const energy = Math.max(0, (y - 0.15) / 0.85); // 0=sleep, 1=play
 
-    // ═══ KICK (on the grid, same clock) ═══
+    // ═══ KICK ═══
     if (energy > 0.1) {
       const kickVol = lerp(0.15, 0.5, energy) * lerp(1.0, 0.4, x);
-      if (beatInBar === 0 ||
-          (beatInBar === 8 && energy > 0.3) ||
-          (beatInBar === 6 && energy > 0.7)) {
+      if (beatInBar === 0 || (beatInBar === 4 && energy > 0.3)) {
         kickSynth.triggerAttackRelease(lerp(52, 62, y), '16n', time, kickVol);
       }
     }
 
-    // ═══ HIHAT (8ths and 16ths, same grid) ═══
-    if (energy > 0.15) {
-      const isEighth = beatInBar % 2 === 0;
-      const hhProb = isEighth ? energy * 0.8 : energy * 0.3;
-      if (Math.random() < hhProb) {
-        const accent = beatInBar % 4 === 0 ? 1.2 : (isEighth ? 0.8 : 0.45);
-        hihatSynth.triggerAttackRelease('32n', time, lerp(0.04, 0.18, energy) * accent * lerp(1, 0.3, x));
-      }
+    // ═══ HIHAT (every 8th, accent on beats) ═══
+    if (energy > 0.15 && Math.random() < energy * 0.75) {
+      const accent = beatInBar % 2 === 0 ? 1.0 : 0.5;
+      hihatSynth.triggerAttackRelease('32n', time, lerp(0.04, 0.15, energy) * accent * lerp(1, 0.3, x));
     }
 
     // ═══ RIM ghost notes ═══
-    if (energy > 0.4 && (beatInBar === 3 || beatInBar === 7 || beatInBar === 11)) {
-      if (Math.random() < energy * 0.4 * lerp(1, 0.2, x)) {
-        rimSynth.triggerAttackRelease('32n', time, lerp(0.08, 0.25, energy));
+    if (energy > 0.4 && (beatInBar === 3 || beatInBar === 5)) {
+      if (Math.random() < energy * 0.35 * lerp(1, 0.2, x)) {
+        rimSynth.triggerAttackRelease('32n', time, lerp(0.08, 0.2, energy));
       }
     }
 
-    // ═══ BASS re-trigger on certain beats (rhythmic bass in play) ═══
-    if (energy > 0.4 && singAmt > 0.3 && beatInBar === 8) {
-      bassSynth.triggerAttackRelease(midiToFreq(currentBassNote), '4n', time, 0.25 * energy);
+    // ═══ BASS re-trigger ═══
+    if (energy > 0.4 && singAmt > 0.3 && beatInBar === 4) {
+      bassSynth.triggerAttackRelease(midiToFreq(currentBassNote), '4n', time, 0.2 * energy);
     }
 
-    // ═══ MELODY (on 8th note grid = every 2 steps) ═══
-    const isEighth = beatInBar % 2 === 0;
-    if (isEighth) {
-      const eighth = beatInBar / 2; // 0-7
+    // ═══ MELODY (every step is already an 8th note) ═══
+    {
+      const eighth = beatInBar; // 0-7
 
       // ── Sing+Play: music box, chord-locked, rhythmic ──
       if (singAmt > 0 && y > 0.3) {
@@ -648,12 +640,6 @@ function startAudio() {
           const vel = lerp(0.25, 0.5, playAmt) * singAmt;
           const dur = eighth === 0 ? '8n' : '16n';
           musicBoxSynth.triggerAttackRelease(midiToFreq(note), dur, time, vel);
-
-          // Harmony on downbeats
-          if (eighth === 0 && Math.random() > 0.5 && playAmt > 0.5) {
-            const h = note + pick(currentScale.filter(s => s > 2));
-            musicBoxSynth.triggerAttackRelease(midiToFreq(h), '16n', time + 0.03, vel * 0.3);
-          }
           lastMelNote = note;
         }
       }
@@ -689,7 +675,7 @@ function startAudio() {
     }
 
     step++;
-  }, '16n');
+  }, '8n');
 
   // ─── START ───
   Tone.getTransport().bpm.value = 100;
@@ -706,13 +692,8 @@ function updateAudio() {
   Tone.getTransport().bpm.rampTo(lerp(55, 115, y) * lerp(1.0, 0.85, x), 2);
 
   // Reverb
-  const revWet = lerp(0.12, 0.55, x) + lerp(0.2, 0, y);
-  masterReverb.wet.rampTo(Math.min(revWet, 0.7), 2);
-  masterReverb.decay = lerp(2, 10, x * 0.6 + (1 - y) * 0.4);
-
-  // Delay
-  masterDelay.wet.rampTo(lerp(0.03, 0.28, x), 1.5);
-  masterDelay.feedback.rampTo(lerp(0.08, 0.38, x), 1.5);
+  const revWet = lerp(0.1, 0.45, x) + lerp(0.15, 0, y);
+  masterReverb.wet.rampTo(Math.min(revWet, 0.55), 2);
 
   // Filter
   masterFilter.frequency.rampTo(lerp(700, 9000, y) * lerp(1.0, 0.75, x), 1);
@@ -721,12 +702,14 @@ function updateAudio() {
   musicBoxSynth.volume.rampTo(lerp(-6, -24, x) + lerp(-6, 4, y), 1);
   vocalSynth.volume.rampTo(lerp(-8, -28, x) + lerp(3, -5, y), 1);
   bellSynth.volume.rampTo(lerp(-26, -10, x), 1);
-  padSynth.volume.rampTo(lerp(-22, -10, x * 0.5 + (1 - y) * 0.5), 2);
+  // Pad gain
+  const padVol = lerp(0.1, 0.4, x * 0.5 + (1 - y) * 0.5);
+  padSynth.voices.forEach(v => v.volume.rampTo(lerp(-24, -14, padVol), 2));
   bassSynth.volume.rampTo(lerp(-12, -20, y) + lerp(2, -2, 1 - x), 2);
   kickSynth.volume.rampTo(lerp(-14, -26, x) + lerp(-10, 2, y), 1);
   hihatSynth.volume.rampTo(lerp(-24, -36, x) + lerp(-8, 2, y), 1);
   rimSynth.volume.rampTo(lerp(-22, -34, x) + lerp(-6, 2, y), 1);
-  // Noise: subtle everywhere, only gently present in float+sleep
+  // Noise
   const noiseVol = -60 + (1 - y) * 6 + x * 6 + ((1 - y) * x) * 6;
   noiseSynth.volume.rampTo(noiseVol, 2);
   noiseFilter.frequency.rampTo(lerp(400, 900, x), 2);
