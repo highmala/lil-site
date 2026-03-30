@@ -383,17 +383,28 @@ let masterReverb, masterDelay, masterFilter, masterComp, masterGain;
 let noiseFilter;
 let currentChordIndex = 0;
 
-const PENTATONIC = [0, 2, 4, 7, 9];
-const LYDIAN = [0, 2, 4, 6, 7, 9, 11]; // dreamy bright
-const DORIAN = [0, 2, 3, 5, 7, 9, 10]; // warm minor
+const MAJOR_PENTA = [0, 2, 4, 7, 9];
+const MINOR_PENTA = [0, 3, 5, 7, 10];
+const LYDIAN = [0, 2, 4, 6, 7, 9, 11];
+const DORIAN = [0, 2, 3, 5, 7, 9, 10];
 
-// sing+play: bright major. sing+sleep: tender minor
-// float+play: lydian shimmer. float+sleep: deep space
+// Current chord tones (updated on chord change) — melody picks from these
+let currentChordTones = [0, 4, 7];
+let currentRoot = 60;
+
+// sing+play: bright major, simple progressions
 const SING_PLAY_CHORDS = [
-  [60, 64, 67],    // C
-  [65, 69, 72],    // F
+  { notes: [60, 64, 67], root: 48, tones: [0, 4, 7, 12, 16] },    // C
+  [65, 69, 72],    // F (legacy, converted below)
   [67, 71, 74],    // G
-  [60, 64, 69],    // C add9
+  [57, 64, 67],    // Am/C
+];
+// Actually, let's use a cleaner structure
+const SP_CHORDS = [
+  { n: [60, 64, 67], r: 48, t: [0, 2, 4, 7, 9, 12, 14, 16] },      // C — melody: C penta
+  { n: [65, 69, 72], r: 53, t: [0, 2, 4, 7, 9, 12, 14, 16] },      // F — melody: F penta
+  { n: [67, 71, 74], r: 43, t: [0, 2, 4, 7, 9, 12, 14, 16] },      // G — melody: G penta
+  { n: [57, 60, 64], r: 45, t: [0, 3, 5, 7, 9, 12, 15] },          // Am — melody: Am penta
 ];
 const SING_SLEEP_CHORDS = [
   [57, 60, 64, 67], // Am7
@@ -505,73 +516,100 @@ function startAudio() {
 
   // ─── MELODY SEQUENCER ───
   let lastNote = -1;
-  let stepInPhrase = 0;
+  let melodyStep = 0;
 
   melodyLoop = new Tone.Loop(time => {
     const x = xVal, y = yVal;
-    stepInPhrase++;
+    melodyStep++;
 
-    // Probability: sing side = dense, float side = sparse
-    const noteProb = lerp(0.85, 0.12, x) * lerp(0.35, 1.0, y * 0.7 + 0.3);
-    if (Math.random() > noteProb) return;
+    // ─── SING+PLAY: chord-locked, rhythmic melody ───
+    const singAmount = Math.max(0, 1 - x * 2);
+    const floatAmount = Math.max(0, x * 2 - 1);
+    const midAmount = 1 - singAmount - floatAmount;
 
-    // Scale: sing=pentatonic (play) or dorian (sleep). float=lydian (play) or wide pentatonic (sleep)
-    let scale;
-    if (x < 0.5) {
-      scale = y > 0.4 ? PENTATONIC : DORIAN;
-    } else {
-      scale = y > 0.4 ? LYDIAN : PENTATONIC;
-    }
-
-    // Register
-    const baseNote = Math.round(lerp(58, 74, y) + (Math.random() - 0.5) * lerp(5, 16, x));
-    const interval = pick(scale);
-    const note = baseNote + interval;
-    if (note === lastNote && Math.random() > 0.25) return;
-    lastNote = note;
-
-    const freq = midiToFreq(note);
-
-    // ─── TIMBRE CROSSFADE via X ───
-    // x=0 (sing): music box in play, vocal in sleep
-    // x=1 (float): bells and shimmer
-
-    const singAmount = Math.max(0, 1 - x * 2);    // 1 at x=0, 0 at x>=0.5
-    const floatAmount = Math.max(0, x * 2 - 1);    // 0 at x<=0.5, 1 at x=1
-    const midAmount = 1 - singAmount - floatAmount; // blend zone
-
-    // Music box: sing+play corner
     if (singAmount > 0 && y > 0.3) {
-      const vel = lerp(0.2, 0.55, y) * singAmount;
-      musicBoxSynth.triggerAttackRelease(freq, lerp(0.15, 0.05, y), time, vel);
-      // Double-strike ornament
-      if (Math.random() > 0.65 && y > 0.5) {
-        const harm = midiToFreq(note + pick([12, 7]));
-        musicBoxSynth.triggerAttackRelease(harm, 0.03, time + 0.04, vel * 0.35);
+      // Use chord tones for harmonic coherence
+      const playAmount = Math.max(0, (y - 0.3) / 0.7);
+
+      // Rhythmic probability: on-beat notes more likely, syncopation at high energy
+      const beat8 = melodyStep % 8;
+      let prob;
+      if (beat8 === 0) prob = 0.9;       // downbeat
+      else if (beat8 === 4) prob = 0.75;  // beat 3
+      else if (beat8 === 2 || beat8 === 6) prob = 0.5; // off-beats
+      else prob = 0.2 * playAmount;       // ghost 16ths only at high energy
+      prob *= singAmount * lerp(0.5, 1.0, playAmount);
+
+      if (Math.random() < prob) {
+        // Pick from current chord tones (set by chord drift)
+        const tone = pick(currentChordTones);
+        // Place in a musical register: 60-84 range, higher in play
+        const octaveBase = Math.round(lerp(60, 72, playAmount));
+        const note = octaveBase + tone;
+        const freq = midiToFreq(note);
+
+        // Favor stepwise motion: if close to last note, prefer it
+        let finalNote = note;
+        if (lastNote > 0 && Math.abs(note - lastNote) > 7 && Math.random() > 0.4) {
+          // Try a note closer to the last one
+          const closest = currentChordTones
+            .map(t => octaveBase + t)
+            .sort((a, b) => Math.abs(a - lastNote) - Math.abs(b - lastNote));
+          finalNote = closest[0] || note;
+        }
+        const finalFreq = midiToFreq(finalNote);
+        lastNote = finalNote;
+
+        const vel = lerp(0.25, 0.5, playAmount) * singAmount;
+        const dur = beat8 === 0 ? 0.15 : 0.08; // longer on downbeat
+        musicBoxSynth.triggerAttackRelease(finalFreq, dur, time, vel);
+
+        // Harmony double on downbeats
+        if (beat8 === 0 && Math.random() > 0.5 && playAmount > 0.5) {
+          const harm = midiToFreq(finalNote + pick([4, 7, 12]));
+          musicBoxSynth.triggerAttackRelease(harm, 0.06, time + 0.03, vel * 0.3);
+        }
       }
     }
 
-    // Vocal: sing+sleep corner
+    // ─── SING+SLEEP: vocal, slower, chord-aware ───
     if (singAmount > 0 && y < 0.7) {
-      const sleepiness = 1 - y;
-      const vel = lerp(0.1, 0.35, sleepiness) * singAmount;
-      vocalSynth.triggerAttackRelease(freq, lerp(0.5, 2.0, sleepiness), time, vel);
-    }
+      const sleepiness = Math.max(0, (0.7 - y) / 0.7);
+      const beat4 = melodyStep % 4;
+      // Much sparser: mainly on beats, occasional passing tones
+      const prob = (beat4 === 0 ? 0.6 : 0.15) * sleepiness * singAmount;
 
-    // Mid zone: mix of both
-    if (midAmount > 0) {
-      const vel = lerp(0.15, 0.4, y) * midAmount;
-      if (y > 0.5) {
-        musicBoxSynth.triggerAttackRelease(freq, 0.1, time, vel);
-      } else {
-        vocalSynth.triggerAttackRelease(freq, 1.0, time, vel * 0.7);
+      if (Math.random() < prob) {
+        const tone = pick(currentChordTones);
+        const note = lerp(55, 65, 1 - sleepiness) + tone;
+        const freq = midiToFreq(Math.round(note));
+        const vel = lerp(0.1, 0.3, sleepiness) * singAmount;
+        vocalSynth.triggerAttackRelease(freq, lerp(0.8, 2.5, sleepiness), time, vel);
+        lastNote = Math.round(note);
       }
     }
 
-    // Float side: rare melodic touches through bells
-    if (floatAmount > 0 && Math.random() > 0.5) {
-      const vel = lerp(0.1, 0.25, floatAmount);
-      bellSynth.triggerAttackRelease(midiToFreq(note + 12), 0.02, time, vel);
+    // ─── MID ZONE ───
+    if (midAmount > 0) {
+      const prob = lerp(0.3, 0.6, y) * midAmount;
+      if (Math.random() < prob) {
+        const tone = pick(currentChordTones);
+        const note = 64 + tone;
+        const freq = midiToFreq(note);
+        const vel = lerp(0.15, 0.35, y) * midAmount;
+        if (y > 0.5) {
+          musicBoxSynth.triggerAttackRelease(freq, 0.1, time, vel);
+        } else {
+          vocalSynth.triggerAttackRelease(freq, 1.2, time, vel * 0.6);
+        }
+      }
+    }
+
+    // ─── FLOAT: sparse bell touches ───
+    if (floatAmount > 0 && Math.random() < floatAmount * 0.2) {
+      const tone = pick(currentChordTones);
+      const note = 76 + tone;
+      bellSynth.triggerAttackRelease(midiToFreq(note), 0.02, time, lerp(0.08, 0.2, floatAmount));
     }
   }, '8n');
 
@@ -641,32 +679,48 @@ function startAudio() {
   }, '2n');
 
   // ─── CHORD DRIFT ───
-  function getChords() {
+  function getChordSet() {
     const x = xVal, y = yVal;
-    // Bilinear blend between 4 chord sets
-    if (x < 0.5 && y > 0.5) return SING_PLAY_CHORDS;
-    if (x < 0.5 && y <= 0.5) return SING_SLEEP_CHORDS;
-    if (x >= 0.5 && y > 0.5) return FLOAT_PLAY_CHORDS;
-    return FLOAT_SLEEP_CHORDS;
+    if (x < 0.5 && y > 0.5) return { chords: SP_CHORDS, type: 'sp' };
+    if (x < 0.5 && y <= 0.5) return { chords: SING_SLEEP_CHORDS, type: 'ss' };
+    if (x >= 0.5 && y > 0.5) return { chords: FLOAT_PLAY_CHORDS, type: 'fp' };
+    return { chords: FLOAT_SLEEP_CHORDS, type: 'fs' };
   }
 
   function playChord() {
     const x = xVal, y = yVal;
-    const chords = getChords();
+    const { chords, type } = getChordSet();
     currentChordIndex = (currentChordIndex + 1) % chords.length;
     if (Math.random() > 0.75) currentChordIndex = Math.floor(Math.random() * chords.length);
 
-    const chord = chords[currentChordIndex];
+    const chordData = chords[currentChordIndex];
     padSynth.releaseAll();
+
+    let chord, bassRoot;
+    if (type === 'sp' && chordData.n) {
+      // Structured chord with melody tones
+      chord = chordData.n;
+      bassRoot = chordData.r;
+      currentChordTones = chordData.t; // melody picks from these
+      currentRoot = chordData.r;
+    } else {
+      // Legacy array format
+      chord = chordData;
+      bassRoot = chord[0] - 12;
+      // Derive pentatonic chord tones from root
+      const root = chord[0] % 12;
+      currentChordTones = [0, 2, 4, 7, 9, 12, 14, 16].map(t => (t + root) % 24);
+      currentRoot = chord[0] - 12;
+    }
 
     // Pad voicing
     const padVol = lerp(0.2, 0.55, x * 0.5 + (1 - y) * 0.5);
     padSynth.triggerAttack(chord.map(midiToFreq), Tone.now(), padVol);
 
-    // Bass root
-    const bassVol = lerp(0.15, 0.45, 1 - y);
+    // Bass: in sing+play, bass matches the chord root tightly
+    const bassVol = lerp(0.15, 0.5, (1 - y) * 0.5 + (1 - x) * 0.5);
     bassSynth.triggerRelease();
-    bassSynth.triggerAttack(midiToFreq(chord[0] - 12), Tone.now(), bassVol);
+    bassSynth.triggerAttack(midiToFreq(bassRoot), Tone.now(), bassVol);
   }
 
   function scheduleChord() {
