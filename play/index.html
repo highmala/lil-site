@@ -378,14 +378,20 @@ function initApp() {
   function onStart(e) {
     e.preventDefault();
     if (!audioStarted) {
-      // iOS: Tone.start(), resume AudioContext, AND startAudio all synchronously in gesture
-      Tone.start();
-      Tone.getContext().resume();
-      startAudio();
-      audioStarted = true;
-      setInterval(() => { if (audioStarted) updateAudio(); }, 200);
+      audioStarted = true; // prevent double-init
       prompt.style.display = 'none';
       document.getElementById('mute-btn').style.display = 'block';
+
+      // Try sync first (Safari), then async fallback (Chrome)
+      const ctx = Tone.getContext().rawContext;
+      if (ctx.state === 'suspended') ctx.resume();
+      Tone.start().then(() => {
+        if (Tone.getContext().rawContext.state === 'suspended') {
+          Tone.getContext().rawContext.resume();
+        }
+        startAudio();
+        setInterval(() => { if (audioStarted) updateAudio(); }, 200);
+      });
     }
     isDragging = true;
     onMove(e);
