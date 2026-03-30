@@ -691,8 +691,8 @@ function updateAudio() {
   kickSynth.volume.rampTo(lerp(-14, -26, x) + lerp(-10, 2, y), 1);
   hihatSynth.volume.rampTo(lerp(-24, -36, x) + lerp(-8, 2, y), 1);
   rimSynth.volume.rampTo(lerp(-22, -34, x) + lerp(-6, 2, y), 1);
-  // Noise: only really present in float+sleep corner, very quiet elsewhere
-  const noiseVol = -48 + (1 - y) * 10 + x * 10 + ((1 - y) * x) * 8;
+  // Noise: subtle everywhere, only gently present in float+sleep
+  const noiseVol = -60 + (1 - y) * 6 + x * 6 + ((1 - y) * x) * 6;
   noiseSynth.volume.rampTo(noiseVol, 2);
   noiseFilter.frequency.rampTo(lerp(400, 900, x), 2);
 }
