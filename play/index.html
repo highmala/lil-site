@@ -685,34 +685,26 @@ function startAudio() {
 }
 
 function updateAudio() {
-  if (!audioStarted) return;
+  if (!audioStarted || isMuted) return;
   const x = xVal, y = yVal;
 
-  // BPM: sleep=55, play=115; float slows slightly
-  Tone.getTransport().bpm.rampTo(lerp(55, 115, y) * lerp(1.0, 0.85, x), 2);
+  // Direct .value sets — no rampTo to prevent automation timeline accumulation
+  Tone.getTransport().bpm.value = lerp(55, 115, y) * lerp(1.0, 0.85, x);
 
-  // Reverb
-  const revWet = lerp(0.1, 0.45, x) + lerp(0.15, 0, y);
-  masterReverb.wet.rampTo(Math.min(revWet, 0.55), 2);
+  masterReverb.wet.value = Math.min(lerp(0.1, 0.45, x) + lerp(0.15, 0, y), 0.55);
+  masterFilter.frequency.value = lerp(700, 9000, y) * lerp(1.0, 0.75, x);
 
-  // Filter
-  masterFilter.frequency.rampTo(lerp(700, 9000, y) * lerp(1.0, 0.75, x), 1);
-
-  // Volume mix
-  musicBoxSynth.volume.rampTo(lerp(-6, -24, x) + lerp(-6, 4, y), 1);
-  vocalSynth.volume.rampTo(lerp(-8, -28, x) + lerp(3, -5, y), 1);
-  bellSynth.volume.rampTo(lerp(-26, -10, x), 1);
-  // Pad gain
-  const padVol = lerp(0.1, 0.4, x * 0.5 + (1 - y) * 0.5);
-  padSynth.voices.forEach(v => v.volume.rampTo(lerp(-24, -14, padVol), 2));
-  bassSynth.volume.rampTo(lerp(-12, -20, y) + lerp(2, -2, 1 - x), 2);
-  kickSynth.volume.rampTo(lerp(-14, -26, x) + lerp(-10, 2, y), 1);
-  hihatSynth.volume.rampTo(lerp(-24, -36, x) + lerp(-8, 2, y), 1);
-  rimSynth.volume.rampTo(lerp(-22, -34, x) + lerp(-6, 2, y), 1);
-  // Noise
-  const noiseVol = -60 + (1 - y) * 6 + x * 6 + ((1 - y) * x) * 6;
-  noiseSynth.volume.rampTo(noiseVol, 2);
-  noiseFilter.frequency.rampTo(lerp(400, 900, x), 2);
+  musicBoxSynth.volume.value = lerp(-6, -24, x) + lerp(-6, 4, y);
+  vocalSynth.volume.value = lerp(-8, -28, x) + lerp(3, -5, y);
+  bellSynth.volume.value = lerp(-26, -10, x);
+  const pv = lerp(-24, -14, lerp(0.1, 0.4, x * 0.5 + (1 - y) * 0.5));
+  padSynth.voices.forEach(v => { v.volume.value = pv; });
+  bassSynth.volume.value = lerp(-12, -20, y) + lerp(2, -2, 1 - x);
+  kickSynth.volume.value = lerp(-14, -26, x) + lerp(-10, 2, y);
+  hihatSynth.volume.value = lerp(-24, -36, x) + lerp(-8, 2, y);
+  rimSynth.volume.value = lerp(-22, -34, x) + lerp(-6, 2, y);
+  noiseSynth.volume.value = -60 + (1 - y) * 6 + x * 6 + ((1 - y) * x) * 6;
+  noiseFilter.frequency.value = lerp(400, 900, x);
 }
 
 // ─── MUTE TOGGLE ───
