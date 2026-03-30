@@ -236,19 +236,20 @@ const pwInput = document.getElementById('pw');
 const gate = document.getElementById('gate');
 const appEl = document.getElementById('app');
 
-pwInput.addEventListener('keydown', e => {
-  if (e.key === 'Enter') {
-    if (pwInput.value === PASS) {
-      gate.style.display = 'none';
-      appEl.style.display = 'block';
-      initApp();
-    } else {
-      gate.classList.add('wrong');
-      pwInput.value = '';
-      setTimeout(() => gate.classList.remove('wrong'), 400);
-    }
+function tryPassword() {
+  if (pwInput.value === PASS) {
+    gate.style.display = 'none';
+    appEl.style.display = 'block';
+    initApp();
+  } else {
+    gate.classList.add('wrong');
+    pwInput.value = '';
+    setTimeout(() => gate.classList.remove('wrong'), 400);
   }
-});
+}
+pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryPassword(); });
+// Also handle 'Go' button on mobile keyboards
+pwInput.addEventListener('change', tryPassword);
 
 // ─── STATE ───
 // x: 0 = hum, 1 = glow
@@ -377,13 +378,12 @@ function initApp() {
   function onStart(e) {
     e.preventDefault();
     if (!audioStarted) {
-      // MUST call Tone.start() directly in user gesture for iOS
-      Tone.start().then(() => {
-        startAudio();
-        audioStarted = true;
-        // Start audio param update interval (not every frame)
-        setInterval(() => { if (audioStarted) updateAudio(); }, 200);
-      });
+      // iOS: Tone.start(), resume AudioContext, AND startAudio all synchronously in gesture
+      Tone.start();
+      Tone.getContext().resume();
+      startAudio();
+      audioStarted = true;
+      setInterval(() => { if (audioStarted) updateAudio(); }, 200);
       prompt.style.display = 'none';
       document.getElementById('mute-btn').style.display = 'block';
     }
