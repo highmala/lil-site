@@ -231,12 +231,24 @@ pwInput.addEventListener('keydown', e => {
 });
 
 // ─── STATE ───
-// x: 0 = melodic, 1 = ambient
+// x: 0 = hum, 1 = glow
 // y: 0 = sleep (bottom), 1 = play (top)
-let xVal = 0.5;
+let xVal = 0.5;      // current (smoothed)
 let yVal = 0.5;
+let xTarget = 0.5;   // target (where user clicked/dragged)
+let yTarget = 0.5;
 let audioStarted = false;
 let isDragging = false;
+const GLIDE_SPEED = 0.02; // ~3-4 seconds to reach target
+
+// Smooth glide loop
+(function glideLoop() {
+  xVal += (xTarget - xVal) * GLIDE_SPEED;
+  yVal += (yTarget - yVal) * GLIDE_SPEED;
+  if (audioStarted) updateAudio();
+  updateVisuals();
+  requestAnimationFrame(glideLoop);
+})();
 
 // ─── COLORS ───
 function lerpColor(a, b, t) {
@@ -315,14 +327,7 @@ function updateVisuals() {
   const prompt = document.getElementById('start-prompt');
   if (prompt) prompt.style.color = textColor;
 
-  // Start color drift animation if not running
-  if (!window._colorDrift) {
-    window._colorDrift = true;
-    (function drift() {
-      if (!isDragging) updateVisuals(); // keep colors shifting even when not touching
-      requestAnimationFrame(drift);
-    })();
-  }
+  // Color drift is handled by the glide loop
 
   // Labels: brighter in sleep, dimmer in play
   const baseLabelOpacity = lerp(0.35, 0.08, y);
@@ -364,10 +369,9 @@ function initApp() {
     if (!isDragging) return;
     e.preventDefault();
     const pos = getXY(e);
-    xVal = pos.x;
-    yVal = pos.y;
-    updateVisuals();
-    updateAudio();
+    xTarget = pos.x;
+    yTarget = pos.y;
+    // glideLoop handles the smooth transition
   }
 
   function onEnd() { isDragging = false; }
