@@ -167,6 +167,27 @@
     #grid .h { left: 0; right: 0; height: 1px; top: 50%; }
     #grid .v { top: 0; bottom: 0; width: 1px; left: 50%; }
 
+    /* Mute button */
+    #mute-btn {
+      position: absolute;
+      bottom: 5vh;
+      right: 5vw;
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.15);
+      background: rgba(255,255,255,0.05);
+      color: #fff;
+      font-size: 18px;
+      cursor: pointer;
+      z-index: 20;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      transition: border-color 0.3s, background 0.3s, color 1.5s;
+    }
+    #mute-btn:hover { background: rgba(255,255,255,0.1); }
+    #mute-btn.muted { border-color: rgba(255,100,100,0.3); }
+
     /* Version */
     #version {
       position: absolute;
@@ -206,6 +227,7 @@
     </div>
 
     <div id="ball"></div>
+    <button id="mute-btn" title="mute">🔊</button>
     <div id="version">lil.audio v0.1</div>
   </div>
 
@@ -364,6 +386,7 @@ function initApp() {
       startAudio();
       audioStarted = true;
       prompt.style.display = 'none';
+      document.getElementById('mute-btn').style.display = 'flex';
     }
     isDragging = true;
     onMove(e);
@@ -704,6 +727,23 @@ function updateAudio() {
   noiseSynth.volume.rampTo(noiseVol, 2);
   noiseFilter.frequency.rampTo(lerp(400, 900, x), 2);
 }
+
+// ─── MUTE TOGGLE ───
+let isMuted = false;
+document.getElementById('mute-btn').addEventListener('click', (e) => {
+  e.stopPropagation();
+  isMuted = !isMuted;
+  const btn = document.getElementById('mute-btn');
+  if (isMuted) {
+    masterGain.gain.rampTo(0, 0.5);
+    btn.textContent = '🔇';
+    btn.classList.add('muted');
+  } else {
+    masterGain.gain.rampTo(0.6, 0.5);
+    btn.textContent = '🔊';
+    btn.classList.remove('muted');
+  }
+});
 
 </script>
 </body>
