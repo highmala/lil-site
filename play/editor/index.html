@@ -771,9 +771,9 @@ function advanceChord(time) {
   currentPadNotes = ch.pad;
   currentBassNote = ch.bass;
 
-  padSynth.releaseAll();
+  padSynth.voices.forEach(v => v.triggerRelease());
   const padVol = lerp(0.2, 0.5, x*0.5 + (1-y)*0.5) * W.mix.pad * 2;
-  padSynth.triggerAttack(ch.pad.map(midiToFreq), time, padVol);
+  const pNotes = ch.pad.map(midiToFreq); padSynth.voices.forEach((v,i) => { if(pNotes[i]) v.triggerAttackRelease(pNotes[i], '2n', time+0.05, padVol); });
 
   bassSynth.triggerRelease(time);
   const bassVol = lerp(0.2, 0.5, 1-y) * W.mix.bass * 2;
@@ -795,29 +795,26 @@ document.getElementById('start-btn').addEventListener('click', () => {
   melodyReverb = new Tone.Reverb({ decay: 2.5, wet: W.fx.melReverb }).connect(masterGain);
 
   // Synths
-  musicBoxSynth = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'custom', partials: [1,0.8,0.4,0.2,0.1] },
-    envelope: { attack: 0.002, decay: 0.5, sustain: 0.02, release: 1.2 }, volume: -8,
+  musicBoxSynth = new Tone.Synth({
+    oscillator: { type: 'triangle8' },
+    envelope: { attack: 0.002, decay: 0.35, sustain: 0, release: 0.5 }, volume: -8,
   }).connect(melodyReverb);
 
-  vocalSynth = new Tone.PolySynth(Tone.FMSynth, {
-    harmonicity: 2.01, modulationIndex: 1.5,
-    oscillator: { type: 'triangle' }, modulation: { type: 'sine' },
-    envelope: { attack: 0.15, decay: 1.8, sustain: 0.4, release: 3 },
-    modulationEnvelope: { attack: 0.3, decay: 0.8, sustain: 0.3, release: 2 }, volume: -12,
-  }).connect(melodyReverb);
-
-  bellSynth = new Tone.PolySynth(Tone.Synth, {
+  vocalSynth = new Tone.Synth({
     oscillator: { type: 'sine' },
-    envelope: { attack: 0.001, decay: 2.5, sustain: 0, release: 4 }, volume: -16,
+    envelope: { attack: 0.15, decay: 1.0, sustain: 0.15, release: 1.0 }, volume: -12,
   }).connect(melodyReverb);
 
-  padSynth = new Tone.PolySynth(Tone.FMSynth, {
-    harmonicity: 1.005, modulationIndex: 0.5,
-    oscillator: { type: 'sine' }, modulation: { type: 'triangle' },
-    envelope: { attack: 4, decay: 3, sustain: 0.7, release: 6 },
-    modulationEnvelope: { attack: 5, decay: 4, sustain: 0.5, release: 6 }, volume: -18,
-  }).connect(masterGain);
+  bellSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 1.0, sustain: 0, release: 1.0 }, volume: -16,
+  }).connect(melodyReverb);
+
+  const padGain = new Tone.Gain(0.3).connect(masterGain);
+  const padOsc1 = new Tone.Synth({ oscillator:{type:'sine'}, envelope:{attack:2,decay:1,sustain:0.5,release:2}, volume:-20 }).connect(padGain);
+  const padOsc2 = new Tone.Synth({ oscillator:{type:'sine'}, envelope:{attack:2,decay:1,sustain:0.5,release:2}, volume:-20 }).connect(padGain);
+  const padOsc3 = new Tone.Synth({ oscillator:{type:'sine'}, envelope:{attack:2,decay:1,sustain:0.5,release:2}, volume:-22 }).connect(padGain);
+  padSynth = { voices: [padOsc1, padOsc2, padOsc3] };
 
   bassSynth = new Tone.Synth({
     oscillator: { type: 'triangle' },
@@ -829,10 +826,11 @@ document.getElementById('start-btn').addEventListener('click', () => {
     envelope: { attack: 0.001, decay: 0.25, sustain: 0, release: 0.3 }, volume: -18,
   }).connect(masterGain);
 
-  hihatSynth = new Tone.MetalSynth({
-    frequency: 300, envelope: { attack: 0.001, decay: 0.08, release: 0.02 },
-    harmonicity: 5.1, modulationIndex: 20, resonance: 6000, octaves: 1.5, volume: -28,
-  }).connect(masterGain);
+  const hhFilter = new Tone.Filter({ frequency: 8000, type: 'highpass' }).connect(masterGain);
+  hihatSynth = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.01 }, volume: -28,
+  }).connect(hhFilter);
 
   rimSynth = new Tone.NoiseSynth({
     noise: { type: 'white' },
@@ -935,14 +933,14 @@ document.getElementById('start-btn').addEventListener('click', () => {
   setInterval(() => {
     if (!audioStarted) return;
     const x = xVal, y = yVal;
-    Tone.getTransport().bpm.rampTo(lerp(W.tempo.sleep, W.tempo.play, y) * lerp(1, W.tempo.glowMult, x), 2);
-    masterReverb.wet.rampTo(Math.min(lerp(0.12,0.55,x)+lerp(0.2,0,y), 0.7), 2);
-    masterDelay.wet.rampTo(lerp(0.03,0.28,x), 1.5);
-    masterDelay.feedback.rampTo(lerp(W.fx.fbMin, W.fx.fbMax, x), 1.5);
-    masterFilter.frequency.rampTo(lerp(W.fx.filtMin, W.fx.filtMax, y)*lerp(1,0.75,x), 1);
-    melodyReverb.wet.rampTo(W.fx.melReverb, 1);
-    masterGain.gain.rampTo(W.mix.master, 0.5);
-    noiseSynth.volume.rampTo(-60 + (1-y)*6 + x*6 + ((1-y)*x)*6*W.corners.fs.noise*4, 2);
+    Tone.getTransport().bpm.value = lerp(W.tempo.sleep, W.tempo.play, y) * lerp(1, W.tempo.glowMult, x);
+    masterReverb.wet.value = Math.min(lerp(0.12,0.55,x)+lerp(0.2,0,y), 0.7);
+    masterDelay.wet.value = lerp(0.03,0.28,x);
+    masterDelay.feedback.value = lerp(W.fx.fbMin, W.fx.fbMax, x);
+    masterFilter.frequency.value = lerp(W.fx.filtMin, W.fx.filtMax, y)*lerp(1,0.75,x);
+    melodyReverb.wet.value = W.fx.melReverb;
+    masterGain.gain.value = W.mix.master;
+    noiseSynth.volume.value = -60 + (1-y)*6 + x*6 + ((1-y)*x)*6*W.corners.fs.noise*4;
   }, 250);
 });
 </script>

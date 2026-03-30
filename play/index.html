@@ -263,20 +263,48 @@ let appReady = false;
 let isDragging = false;
 const GLIDE_SPEED = 0.02;
 let lastVisualUpdate = 0;
+let visualFrameId = 0;
+let audioControlTimer = 0;
+let fieldMetrics = { left: 0, top: 0, width: 1, height: 1 };
+let isPageHidden = document.hidden;
+
+const fieldEl = document.getElementById('field');
+const ballEl = document.getElementById('ball');
+const promptEl = document.getElementById('start-prompt');
+const muteBtnEl = document.getElementById('mute-btn');
+const appLogoEl = document.getElementById('app-logo');
+const versionEl = document.getElementById('version');
+const labelEls = Array.from(document.querySelectorAll('.corner-label'));
+const gridLineEls = Array.from(document.querySelectorAll('#grid .line'));
+const lblTopEl = document.getElementById('lbl-top');
+const lblBottomEl = document.getElementById('lbl-bottom');
+const lblLeftEl = document.getElementById('lbl-left');
+const lblRightEl = document.getElementById('lbl-right');
+
+function updateFieldMetrics() {
+  const rect = fieldEl.getBoundingClientRect();
+  fieldMetrics.left = rect.left;
+  fieldMetrics.top = rect.top;
+  fieldMetrics.width = Math.max(rect.width, 1);
+  fieldMetrics.height = Math.max(rect.height, 1);
+}
 
 // Smooth glide loop — throttled to ~30fps for visuals, audio updates less often
-(function glideLoop() {
+function glideLoop(now) {
   if (appReady) {
     xVal += (xTarget - xVal) * GLIDE_SPEED;
     yVal += (yTarget - yVal) * GLIDE_SPEED;
-    const now = performance.now();
+
     if (now - lastVisualUpdate > 33) { // ~30fps
-      updateVisuals();
+      updateVisuals(now);
       lastVisualUpdate = now;
     }
   }
-  requestAnimationFrame(glideLoop);
-})();
+  visualFrameId = requestAnimationFrame(glideLoop);
+}
+
+updateFieldMetrics();
+visualFrameId = requestAnimationFrame(glideLoop);
 
 // ─── COLORS ───
 function lerpColor(a, b, t) {
@@ -312,11 +340,11 @@ function bilinearHex(tl, tr, bl, br, x, y) {
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 }
 
-function updateVisuals() {
+function updateVisuals(now = performance.now()) {
   const x = xVal, y = yVal;
 
   // Background: deep black at sleep, bright shifting colors at play
-  const time01 = (Date.now() % 20000) / 20000;
+  const time01 = (now % 20000) / 20000;
   const hue = ((x * 60) + (time01 * 360)) % 360;
   const sat = lerp(70, 50, x);
   // Lightness: 3% at sleep, up to 90% at play
@@ -325,36 +353,32 @@ function updateVisuals() {
 
   // Ball color
   const ballColor = bilinearHex(C_TL, C_TR, C_BL, C_BR, x, y);
-  const ball = document.getElementById('ball');
-  ball.style.backgroundColor = ballColor;
-  ball.style.boxShadow = `0 0 ${20 + (1 - y) * 40}px ${ballColor}77`;
+  ballEl.style.backgroundColor = ballColor;
+  ballEl.style.boxShadow = `0 0 ${20 + (1 - y) * 40}px ${ballColor}77`;
 
-  // Position ball
-  const fieldRect = document.getElementById('field').getBoundingClientRect();
-  ball.style.left = (fieldRect.left + x * fieldRect.width) + 'px';
-  ball.style.top = (fieldRect.top + (1 - y) * fieldRect.height) + 'px';
+  // Position ball using cached field metrics to avoid layout work every frame.
+  ballEl.style.left = (fieldMetrics.left + x * fieldMetrics.width) + 'px';
+  ballEl.style.top = (fieldMetrics.top + (1 - y) * fieldMetrics.height) + 'px';
 
   // Text: bright white in sleep (dark bg), dark in play (light bg)
   const textColor = lerpColor('#ffffff', '#1a1a2e', y);
-  document.querySelectorAll('.corner-label').forEach(el => el.style.color = textColor);
-  document.getElementById('app-logo').style.color = textColor;
-  document.getElementById('version').style.color = textColor;
-  document.querySelectorAll('#grid .line').forEach(el => el.style.color = textColor);
-  const prompt = document.getElementById('start-prompt');
-  if (prompt) prompt.style.color = textColor;
+  labelEls.forEach(el => { el.style.color = textColor; });
+  appLogoEl.style.color = textColor;
+  versionEl.style.color = textColor;
+  gridLineEls.forEach(el => { el.style.color = textColor; });
+  if (promptEl) promptEl.style.color = textColor;
 
   // Color drift is handled by the glide loop
 
   // Labels: brighter in sleep, dimmer in play. Highlight the nearest axis label.
   const baseLabelOpacity = lerp(0.3, 0.08, y);
-  document.querySelectorAll('.corner-label').forEach(el => el.style.opacity = baseLabelOpacity);
-  document.getElementById('lbl-top').style.opacity = baseLabelOpacity + y * 0.3;
-  document.getElementById('lbl-bottom').style.opacity = baseLabelOpacity + (1 - y) * 0.3;
-  document.getElementById('lbl-left').style.opacity = baseLabelOpacity + (1 - x) * 0.3;
-  document.getElementById('lbl-right').style.opacity = baseLabelOpacity + x * 0.3;
+  labelEls.forEach(el => { el.style.opacity = baseLabelOpacity; });
+  lblTopEl.style.opacity = baseLabelOpacity + y * 0.3;
+  lblBottomEl.style.opacity = baseLabelOpacity + (1 - y) * 0.3;
+  lblLeftEl.style.opacity = baseLabelOpacity + (1 - x) * 0.3;
+  lblRightEl.style.opacity = baseLabelOpacity + x * 0.3;
   // Mute button color
-  const muteBtn = document.getElementById('mute-btn');
-  if (muteBtn) muteBtn.style.color = textColor;
+  if (muteBtnEl) muteBtnEl.style.color = textColor;
 }
 
 // ─── INTERACTION ───
@@ -362,16 +386,14 @@ function initApp() {
   appReady = true;
   updateVisuals();
 
-  const field = document.getElementById('field');
-  const prompt = document.getElementById('start-prompt');
+  updateFieldMetrics();
 
   function getXY(e) {
-    const rect = field.getBoundingClientRect();
     const cx = e.touches ? e.touches[0].clientX : e.clientX;
     const cy = e.touches ? e.touches[0].clientY : e.clientY;
     return {
-      x: Math.max(0, Math.min(1, (cx - rect.left) / rect.width)),
-      y: Math.max(0, Math.min(1, 1 - (cy - rect.top) / rect.height))
+      x: Math.max(0, Math.min(1, (cx - fieldMetrics.left) / fieldMetrics.width)),
+      y: Math.max(0, Math.min(1, 1 - (cy - fieldMetrics.top) / fieldMetrics.height))
     };
   }
 
@@ -379,8 +401,8 @@ function initApp() {
     e.preventDefault();
     if (!audioStarted) {
       audioStarted = true; // prevent double-init
-      prompt.style.display = 'none';
-      document.getElementById('mute-btn').style.display = 'block';
+      promptEl.style.display = 'none';
+      muteBtnEl.style.display = 'block';
 
       // Try sync first (Safari), then async fallback (Chrome)
       const ctx = Tone.getContext().rawContext;
@@ -390,7 +412,7 @@ function initApp() {
           Tone.getContext().rawContext.resume();
         }
         startAudio();
-        setInterval(() => { if (audioStarted) updateAudio(); }, 200);
+        startAudioControlLoop();
       });
     }
     isDragging = true;
@@ -408,12 +430,14 @@ function initApp() {
 
   function onEnd() { isDragging = false; }
 
-  field.addEventListener('mousedown', onStart);
-  field.addEventListener('touchstart', onStart, { passive: false });
+  fieldEl.addEventListener('mousedown', onStart);
+  fieldEl.addEventListener('touchstart', onStart, { passive: false });
   window.addEventListener('mousemove', onMove);
   window.addEventListener('touchmove', onMove, { passive: false });
   window.addEventListener('mouseup', onEnd);
   window.addEventListener('touchend', onEnd);
+  window.addEventListener('resize', updateFieldMetrics);
+  window.addEventListener('orientationchange', updateFieldMetrics);
 }
 
 // ═══════════════════════════════════════
@@ -424,6 +448,39 @@ let noiseSynth, kickSynth, hihatSynth, rimSynth;
 let mainLoop; // single master loop runs everything
 let masterReverb, masterDelay, masterFilter, masterComp, masterGain;
 let noiseFilter;
+const transport = Tone.getTransport();
+
+function setParamValue(param, nextValue, epsilon = 0.001) {
+  if (Math.abs(param.value - nextValue) > epsilon) {
+    param.value = nextValue;
+  }
+}
+
+function startAudioControlLoop() {
+  if (audioControlTimer) return;
+
+  const tick = () => {
+    if (!audioStarted) {
+      audioControlTimer = 0;
+      return;
+    }
+
+    if (!document.hidden) {
+      updateAudio();
+    }
+
+    audioControlTimer = window.setTimeout(tick, 250);
+  };
+
+  audioControlTimer = window.setTimeout(tick, 250);
+}
+
+function stopAudioControlLoop() {
+  if (audioControlTimer) {
+    window.clearTimeout(audioControlTimer);
+    audioControlTimer = 0;
+  }
+}
 
 // ─── SHARED MUSICAL STATE ───
 let chordIndex = 0;
@@ -463,8 +520,6 @@ function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
 function lerp(a, b, t) { return a + (b - a) * t; }
 
 function startAudio() {
-  Tone.start();
-
   // ─── FX Chain (minimal for mobile) ───
   masterReverb = new Tone.Reverb({ decay: 3, wet: 0.25 }).toDestination();
   masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass', rolloff: -12 }).connect(masterReverb);
@@ -678,9 +733,11 @@ function startAudio() {
   }, '8n');
 
   // ─── START ───
-  Tone.getTransport().bpm.value = 100;
-  Tone.getTransport().start();
+  transport.bpm.value = 100;
   mainLoop.start(0);
+  if (transport.state !== 'started') {
+    transport.start();
+  }
   updateAudio();
 }
 
@@ -689,38 +746,68 @@ function updateAudio() {
   const x = xVal, y = yVal;
 
   // Direct .value sets — no rampTo to prevent automation timeline accumulation
-  Tone.getTransport().bpm.value = lerp(55, 115, y) * lerp(1.0, 0.85, x);
+  setParamValue(transport.bpm, lerp(55, 115, y) * lerp(1.0, 0.85, x), 0.1);
 
-  masterReverb.wet.value = Math.min(lerp(0.1, 0.45, x) + lerp(0.15, 0, y), 0.55);
-  masterFilter.frequency.value = lerp(700, 9000, y) * lerp(1.0, 0.75, x);
+  setParamValue(masterReverb.wet, Math.min(lerp(0.1, 0.45, x) + lerp(0.15, 0, y), 0.55), 0.005);
+  setParamValue(masterFilter.frequency, lerp(700, 9000, y) * lerp(1.0, 0.75, x), 1);
 
-  musicBoxSynth.volume.value = lerp(-6, -24, x) + lerp(-6, 4, y);
-  vocalSynth.volume.value = lerp(-8, -28, x) + lerp(3, -5, y);
-  bellSynth.volume.value = lerp(-26, -10, x);
+  setParamValue(musicBoxSynth.volume, lerp(-6, -24, x) + lerp(-6, 4, y), 0.25);
+  setParamValue(vocalSynth.volume, lerp(-8, -28, x) + lerp(3, -5, y), 0.25);
+  setParamValue(bellSynth.volume, lerp(-26, -10, x), 0.25);
   const pv = lerp(-24, -14, lerp(0.1, 0.4, x * 0.5 + (1 - y) * 0.5));
-  padSynth.voices.forEach(v => { v.volume.value = pv; });
-  bassSynth.volume.value = lerp(-12, -20, y) + lerp(2, -2, 1 - x);
-  kickSynth.volume.value = lerp(-14, -26, x) + lerp(-10, 2, y);
-  hihatSynth.volume.value = lerp(-24, -36, x) + lerp(-8, 2, y);
-  rimSynth.volume.value = lerp(-22, -34, x) + lerp(-6, 2, y);
-  noiseSynth.volume.value = -60 + (1 - y) * 6 + x * 6 + ((1 - y) * x) * 6;
-  noiseFilter.frequency.value = lerp(400, 900, x);
+  padSynth.voices.forEach(v => { setParamValue(v.volume, pv, 0.25); });
+  setParamValue(bassSynth.volume, lerp(-12, -20, y) + lerp(2, -2, 1 - x), 0.25);
+  setParamValue(kickSynth.volume, lerp(-14, -26, x) + lerp(-10, 2, y), 0.25);
+  setParamValue(hihatSynth.volume, lerp(-24, -36, x) + lerp(-8, 2, y), 0.25);
+  setParamValue(rimSynth.volume, lerp(-22, -34, x) + lerp(-6, 2, y), 0.25);
+  setParamValue(noiseSynth.volume, -60 + (1 - y) * 6 + x * 6 + ((1 - y) * x) * 6, 0.25);
+  setParamValue(noiseFilter.frequency, lerp(400, 900, x), 1);
 }
 
 // ─── MUTE TOGGLE ───
 let isMuted = false;
-document.getElementById('mute-btn').addEventListener('click', (e) => {
+muteBtnEl.addEventListener('click', (e) => {
   e.stopPropagation();
   isMuted = !isMuted;
-  const btn = document.getElementById('mute-btn');
   if (isMuted) {
-    masterGain.gain.rampTo(0, 0.5);
-    btn.textContent = 'unmute';
+    masterGain.gain.value = 0;
+    muteBtnEl.textContent = 'unmute';
   } else {
-    masterGain.gain.rampTo(0.6, 0.5);
-    btn.textContent = 'mute';
+    masterGain.gain.value = 0.6;
+    muteBtnEl.textContent = 'mute';
   }
 });
+
+document.addEventListener('visibilitychange', () => {
+  isPageHidden = document.hidden;
+
+  if (isPageHidden) {
+    if (visualFrameId) {
+      cancelAnimationFrame(visualFrameId);
+      visualFrameId = 0;
+    }
+    stopAudioControlLoop();
+    if (audioStarted && transport.state === 'started') {
+      transport.pause();
+    }
+    return;
+  }
+
+  updateFieldMetrics();
+  if (!visualFrameId) {
+    lastVisualUpdate = 0;
+    visualFrameId = requestAnimationFrame(glideLoop);
+  }
+  if (audioStarted) {
+    if (transport.state !== 'started') {
+      transport.start();
+    }
+    startAudioControlLoop();
+    updateAudio();
+  }
+});
+
+window.addEventListener('pagehide', stopAudioControlLoop);
 
 </script>
 </body>
