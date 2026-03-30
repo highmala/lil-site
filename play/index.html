@@ -171,22 +171,21 @@
     #mute-btn {
       position: absolute;
       bottom: 5vh;
-      right: 5vw;
-      width: 44px; height: 44px;
-      border-radius: 50%;
-      border: 2px solid rgba(255,255,255,0.15);
-      background: rgba(255,255,255,0.05);
-      color: #fff;
-      font-size: 18px;
+      left: 50%;
+      transform: translateX(-50%);
+      border: none;
+      background: none;
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: clamp(12px, 2.5vw, 16px);
+      font-weight: bold;
+      letter-spacing: 0.1em;
       cursor: pointer;
       z-index: 20;
       display: none;
-      align-items: center;
-      justify-content: center;
-      transition: border-color 0.3s, background 0.3s, color 1.5s;
+      opacity: 0.25;
+      transition: opacity 0.3s, color 1.5s;
     }
-    #mute-btn:hover { background: rgba(255,255,255,0.1); }
-    #mute-btn.muted { border-color: rgba(255,100,100,0.3); }
+    #mute-btn:hover { opacity: 0.5; }
 
     /* Version */
     #version {
@@ -227,7 +226,7 @@
     </div>
 
     <div id="ball"></div>
-    <button id="mute-btn" title="mute">🔊</button>
+    <button id="mute-btn">mute</button>
     <div id="version">lil.audio v0.1</div>
   </div>
 
@@ -736,12 +735,10 @@ document.getElementById('mute-btn').addEventListener('click', (e) => {
   const btn = document.getElementById('mute-btn');
   if (isMuted) {
     masterGain.gain.rampTo(0, 0.5);
-    btn.textContent = '🔇';
-    btn.classList.add('muted');
+    btn.textContent = 'unmute';
   } else {
     masterGain.gain.rampTo(0.6, 0.5);
-    btn.textContent = '🔊';
-    btn.classList.remove('muted');
+    btn.textContent = 'mute';
   }
 });
 
