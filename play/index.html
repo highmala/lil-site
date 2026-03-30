@@ -18,121 +18,113 @@
 
     body {
       min-height: 100vh;
+      min-height: 100dvh;
       display: flex;
       align-items: center;
       justify-content: center;
       font-family: 'ComicSans', 'Comic Sans MS', cursive;
       overflow: hidden;
       touch-action: none;
-      transition: background-color 2s ease;
+      transition: background-color 1.5s ease;
+      background-color: #1a1a2e;
     }
 
-    /* Password screen */
+    /* ─── Password ─── */
     #gate {
       display: flex;
       flex-direction: column;
       align-items: center;
       gap: 20px;
     }
-    #gate .logo {
-      font-size: 60px;
-      font-weight: bold;
-      color: #1a1a2e;
-    }
+    #gate .logo { font-size: 60px; font-weight: bold; color: #fff; }
     #gate input {
       font-family: 'ComicSans', 'Comic Sans MS', cursive;
       font-size: 20px;
       padding: 12px 24px;
-      border: 3px solid #1a1a2e;
+      border: 3px solid rgba(255,255,255,0.3);
       border-radius: 50px;
       text-align: center;
       outline: none;
       background: transparent;
-      color: #1a1a2e;
+      color: #fff;
       letter-spacing: 0.1em;
     }
-    #gate input::placeholder { color: #ccc; }
-    #gate .hint { font-size: 14px; opacity: 0.3; }
+    #gate input::placeholder { color: rgba(255,255,255,0.2); }
+    #gate .hint { font-size: 14px; opacity: 0.2; color: #fff; }
     #gate.wrong input { border-color: #FF3B30; animation: shake 0.4s ease; }
     @keyframes shake {
-      0%, 100% { transform: translateX(0); }
+      0%,100% { transform: translateX(0); }
       25% { transform: translateX(-8px); }
       75% { transform: translateX(8px); }
     }
 
-    /* Main app */
+    /* ─── Main App ─── */
     #app {
       display: none;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
       width: 100%;
       height: 100vh;
+      height: 100dvh;
       position: relative;
-      user-select: none;
     }
 
-    .mode-label {
-      font-size: clamp(14px, 3vw, 20px);
+    /* ─── XY Field ─── */
+    #field {
+      position: absolute;
+      inset: 0;
+      cursor: crosshair;
+    }
+
+    /* Corner labels */
+    .corner-label {
+      position: absolute;
+      font-size: clamp(11px, 2.5vw, 16px);
       font-weight: bold;
-      letter-spacing: 0.2em;
+      letter-spacing: 0.15em;
       text-transform: uppercase;
-      opacity: 0.4;
-      transition: opacity 0.5s;
-      position: absolute;
-    }
-    .mode-label.top { top: 8vh; }
-    .mode-label.bottom { bottom: 8vh; }
-
-    /* The dial */
-    #dial-container {
-      position: relative;
-      width: clamp(200px, 50vw, 320px);
-      height: clamp(200px, 50vw, 320px);
-    }
-
-    #dial-track {
-      width: 100%;
-      height: 100%;
-      border-radius: 50%;
-      border: 4px solid rgba(0,0,0,0.08);
-      position: relative;
-    }
-
-    #dial-knob {
-      width: 60px;
-      height: 60px;
-      border-radius: 50%;
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      cursor: grab;
-      transition: background-color 1s ease;
-      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
-    }
-    #dial-knob:active { cursor: grabbing; }
-
-    #dial-fill {
-      position: absolute;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      border-radius: 0 0 50% 50%;
-      transition: height 0.1s ease;
-      opacity: 0.08;
-    }
-
-    /* Value display */
-    #dial-value {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      font-size: clamp(40px, 10vw, 70px);
-      font-weight: bold;
-      pointer-events: none;
       opacity: 0.15;
+      transition: opacity 0.8s, color 1.5s;
+      pointer-events: none;
+    }
+    .corner-label.tl { top: 5vh; left: 5vw; }
+    .corner-label.tr { top: 5vh; right: 5vw; text-align: right; }
+    .corner-label.bl { bottom: 5vh; left: 5vw; }
+    .corner-label.br { bottom: 5vh; right: 5vw; text-align: right; }
+
+    /* The ball/cursor */
+    #ball {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      box-shadow: 0 0 30px rgba(255,255,255,0.15);
+      transition: background-color 0.8s ease, box-shadow 0.8s ease;
+      z-index: 10;
+    }
+
+    /* Glow trail */
+    #ball::after {
+      content: '';
+      position: absolute;
+      inset: -15px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Logo */
+    #app-logo {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(60px, 15vw, 120px);
+      font-weight: bold;
+      opacity: 0.06;
+      pointer-events: none;
+      z-index: 1;
+      transition: color 1.5s;
     }
 
     /* Start prompt */
@@ -141,62 +133,74 @@
       top: 50%;
       left: 50%;
       transform: translate(-50%, -50%);
-      font-size: clamp(18px, 4vw, 28px);
+      font-size: clamp(16px, 3.5vw, 24px);
       font-weight: bold;
-      opacity: 0.6;
+      opacity: 0.5;
       animation: pulse 2s ease-in-out infinite;
       cursor: pointer;
+      z-index: 20;
+      transition: color 1.5s;
     }
     @keyframes pulse {
-      0%, 100% { opacity: 0.6; }
-      50% { opacity: 0.2; }
+      0%,100% { opacity: 0.5; }
+      50% { opacity: 0.15; }
     }
 
-    /* Logo */
-    #app-logo {
+    /* Grid lines */
+    #grid {
       position: absolute;
-      top: 3vh;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    #grid .line {
+      position: absolute;
+      background: currentColor;
+      opacity: 0.04;
+    }
+    #grid .h { left: 0; right: 0; height: 1px; top: 50%; }
+    #grid .v { top: 0; bottom: 0; width: 1px; left: 50%; }
+
+    /* Version */
+    #version {
+      position: absolute;
+      bottom: 2vh;
       left: 50%;
       transform: translateX(-50%);
-      font-size: 28px;
-      font-weight: bold;
-      opacity: 0.2;
-    }
-
-    /* Status */
-    #status {
-      position: absolute;
-      bottom: 3vh;
-      font-size: 12px;
-      opacity: 0.15;
+      font-size: 10px;
+      opacity: 0.1;
+      pointer-events: none;
+      transition: color 1.5s;
     }
   </style>
 </head>
 <body>
 
-  <!-- Password Gate -->
   <div id="gate">
     <div class="logo">lil</div>
     <input id="pw" type="password" placeholder="•••••••" autofocus>
     <div class="hint">v0.1</div>
   </div>
 
-  <!-- Main App -->
   <div id="app">
-    <div id="app-logo">lil</div>
-    <div class="mode-label top" id="label-play">play ☀</div>
-
-    <div id="dial-container">
-      <div id="dial-track">
-        <div id="dial-fill"></div>
-      </div>
-      <div id="dial-value"></div>
-      <div id="dial-knob"></div>
-      <div id="start-prompt">tap to begin</div>
+    <div id="grid">
+      <div class="line h"></div>
+      <div class="line v"></div>
     </div>
 
-    <div class="mode-label bottom" id="label-sleep">sleep ☾</div>
-    <div id="status">generative · ever-evolving</div>
+    <div id="app-logo">lil</div>
+
+    <div class="corner-label tl" id="lbl-tl">melodic · play</div>
+    <div class="corner-label tr" id="lbl-tr">ambient · play</div>
+    <div class="corner-label bl" id="lbl-bl">melodic · sleep</div>
+    <div class="corner-label br" id="lbl-br">ambient · sleep</div>
+
+    <div id="field">
+      <div id="start-prompt">tap anywhere</div>
+    </div>
+
+    <div id="ball"></div>
+    <div id="version">lil.audio v0.1</div>
   </div>
 
 <script>
@@ -204,13 +208,13 @@
 const PASS = 'bambient';
 const pwInput = document.getElementById('pw');
 const gate = document.getElementById('gate');
-const app = document.getElementById('app');
+const appEl = document.getElementById('app');
 
 pwInput.addEventListener('keydown', e => {
   if (e.key === 'Enter') {
     if (pwInput.value === PASS) {
       gate.style.display = 'none';
-      app.style.display = 'flex';
+      appEl.style.display = 'block';
       initApp();
     } else {
       gate.classList.add('wrong');
@@ -220,8 +224,11 @@ pwInput.addEventListener('keydown', e => {
   }
 });
 
-// ─── APP STATE ───
-let dialValue = 0.5; // 0 = sleep, 1 = play
+// ─── STATE ───
+// x: 0 = melodic, 1 = ambient
+// y: 0 = sleep (bottom), 1 = play (top)
+let xVal = 0.5;
+let yVal = 0.5;
 let audioStarted = false;
 let isDragging = false;
 
@@ -231,69 +238,83 @@ function lerpColor(a, b, t) {
   const bh = parseInt(b.replace('#',''), 16);
   const ar = (ah >> 16) & 0xff, ag = (ah >> 8) & 0xff, ab = ah & 0xff;
   const br = (bh >> 16) & 0xff, bg = (bh >> 8) & 0xff, bb = bh & 0xff;
-  const rr = Math.round(ar + (br - ar) * t);
-  const rg = Math.round(ag + (bg - ag) * t);
-  const rb = Math.round(ab + (bb - ab) * t);
-  return `rgb(${rr},${rg},${rb})`;
+  return `rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`;
 }
 
-const SLEEP_BG = '#0a0a1e';
-const PLAY_BG = '#FFF8E7';
-const SLEEP_KNOB = '#4a3f8a';
-const PLAY_KNOB = '#FF8C42';
-const SLEEP_TEXT = '#8888bb';
-const PLAY_TEXT = '#1a1a2e';
+// Corner colors: TL(melodic+play) TR(ambient+play) BL(melodic+sleep) BR(ambient+sleep)
+const C_TL = '#FFD60A'; // warm yellow
+const C_TR = '#4ECDC4'; // teal
+const C_BL = '#FF6B6B'; // coral
+const C_BR = '#5E5CE6'; // deep purple
+
+function bilinear(tl, tr, bl, br, x, y) {
+  // x: 0=left, 1=right. y: 0=bottom, 1=top
+  const top = lerpColor(tl, tr, x);
+  const bot = lerpColor(bl, br, x);
+  return lerpColor(bot, top, y);
+}
+
+function bilinearHex(tl, tr, bl, br, x, y) {
+  const parse = c => {
+    const h = parseInt(c.replace('#',''), 16);
+    return [(h >> 16) & 0xff, (h >> 8) & 0xff, h & 0xff];
+  };
+  const lerp3 = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const top = lerp3(parse(tl), parse(tr), x);
+  const bot = lerp3(parse(bl), parse(br), x);
+  const c = lerp3(bot, top, y);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
 
 function updateVisuals() {
-  const t = dialValue;
-  document.body.style.backgroundColor = lerpColor(SLEEP_BG, PLAY_BG, t);
+  const x = xVal, y = yVal;
 
-  const knob = document.getElementById('dial-knob');
-  knob.style.backgroundColor = lerpColor(SLEEP_KNOB, PLAY_KNOB, t);
+  // Background: dark when sleep, lighter when play
+  const bgDark = bilinearHex('#1a0a1e', '#0a1a2e', '#1a0a1e', '#0a1a2e', x, y);
+  const bgLight = bilinearHex('#FFF8E0', '#E8F8F8', '#FFF0F0', '#F0F0FF', x, y);
+  document.body.style.backgroundColor = lerpColor(bgDark, bgLight, y * 0.7);
 
-  const textColor = lerpColor(SLEEP_TEXT, PLAY_TEXT, t);
-  document.getElementById('dial-value').style.color = textColor;
-  document.getElementById('label-play').style.color = textColor;
-  document.getElementById('label-sleep').style.color = textColor;
-  document.getElementById('app-logo').style.color = textColor;
-  document.getElementById('status').style.color = textColor;
-  document.getElementById('dial-track').style.borderColor = lerpColor('#333355', '#ddd5c5', t);
+  // Ball color
+  const ballColor = bilinearHex(C_TL, C_TR, C_BL, C_BR, x, y);
+  const ball = document.getElementById('ball');
+  ball.style.backgroundColor = ballColor;
+  ball.style.boxShadow = `0 0 ${30 + y * 20}px ${ballColor}44`;
 
-  // Position knob vertically within the dial
-  const container = document.getElementById('dial-container');
-  const rect = container.getBoundingClientRect();
-  const radius = rect.height / 2 - 30;
-  const angle = Math.PI / 2 + Math.PI * t; // bottom to top
-  const cx = rect.width / 2;
-  const cy = rect.height / 2;
-  const kx = cx + Math.cos(angle) * radius * 0.7;
-  const ky = cy - Math.sin(angle) * radius * 0.7;
+  // Position ball
+  const fieldRect = document.getElementById('field').getBoundingClientRect();
+  ball.style.left = (fieldRect.left + x * fieldRect.width) + 'px';
+  ball.style.top = (fieldRect.top + (1 - y) * fieldRect.height) + 'px';
 
-  knob.style.left = kx + 'px';
-  knob.style.top = ky + 'px';
+  // Text color
+  const textColor = y > 0.5 ? '#1a1a2e' : '#888899';
+  const textOpacity = y > 0.5 ? 0.6 : 0.4;
+  document.querySelectorAll('.corner-label').forEach(el => el.style.color = textColor);
+  document.getElementById('app-logo').style.color = y > 0.5 ? '#1a1a2e' : '#ffffff';
+  document.getElementById('version').style.color = textColor;
+  document.querySelectorAll('#grid .line').forEach(el => el.style.color = textColor);
 
-  document.getElementById('label-play').style.opacity = 0.2 + t * 0.5;
-  document.getElementById('label-sleep').style.opacity = 0.2 + (1 - t) * 0.5;
+  // Highlight nearest corner label
+  document.querySelectorAll('.corner-label').forEach(el => el.style.opacity = 0.1);
+  const nearest = x < 0.5 ? (y > 0.5 ? 'tl' : 'bl') : (y > 0.5 ? 'tr' : 'br');
+  const dist = Math.sqrt(Math.pow(x < 0.5 ? x : 1 - x, 2) + Math.pow(y > 0.5 ? 1 - y : y, 2));
+  document.getElementById('lbl-' + nearest).style.opacity = 0.1 + (1 - dist) * 0.5;
 }
 
-// ─── DIAL INTERACTION ───
+// ─── INTERACTION ───
 function initApp() {
   updateVisuals();
 
-  const container = document.getElementById('dial-container');
-  const knob = document.getElementById('dial-knob');
+  const field = document.getElementById('field');
   const prompt = document.getElementById('start-prompt');
 
-  function getValueFromEvent(e) {
-    const rect = container.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-
-    // Map vertical position to 0-1 (top = 1/play, bottom = 0/sleep)
-    const dy = (cy - clientY) / (rect.height / 2);
-    return Math.max(0, Math.min(1, (dy + 1) / 2));
+  function getXY(e) {
+    const rect = field.getBoundingClientRect();
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: Math.max(0, Math.min(1, (cx - rect.left) / rect.width)),
+      y: Math.max(0, Math.min(1, 1 - (cy - rect.top) / rect.height))
+    };
   }
 
   function onStart(e) {
@@ -310,17 +331,17 @@ function initApp() {
   function onMove(e) {
     if (!isDragging) return;
     e.preventDefault();
-    dialValue = getValueFromEvent(e);
+    const pos = getXY(e);
+    xVal = pos.x;
+    yVal = pos.y;
     updateVisuals();
     updateAudio();
   }
 
-  function onEnd() {
-    isDragging = false;
-  }
+  function onEnd() { isDragging = false; }
 
-  container.addEventListener('mousedown', onStart);
-  container.addEventListener('touchstart', onStart, { passive: false });
+  field.addEventListener('mousedown', onStart);
+  field.addEventListener('touchstart', onStart, { passive: false });
   window.addEventListener('mousemove', onMove);
   window.addEventListener('touchmove', onMove, { passive: false });
   window.addEventListener('mouseup', onEnd);
@@ -328,164 +349,188 @@ function initApp() {
 }
 
 // ─── AUDIO ENGINE ───
-let melodySynth, padSynth, bassSynth, bellSynth, noiseSynth;
-let melodyLoop, rhythmLoop, bellLoop, driftInterval;
-let masterReverb, masterFilter, masterGain;
+let melodySynth, bellSynth, padSynth, bassSynth, noiseSynth, clickSynth;
+let melodyLoop, bellLoop, rhythmLoop, driftTimeout;
+let masterReverb, masterDelay, masterFilter, masterGain;
 let currentChordIndex = 0;
 
-// Musical scales and chords
-const PENTATONIC = [0, 2, 4, 7, 9]; // C pentatonic intervals
-const CHORDS = [
-  [60, 64, 67],  // C maj
-  [65, 69, 72],  // F maj
-  [67, 71, 74],  // G maj
-  [57, 60, 64],  // Am
-  [62, 65, 69],  // Dm
+const PENTATONIC = [0, 2, 4, 7, 9];
+const MAJOR = [0, 2, 4, 5, 7, 9, 11];
+const DORIAN = [0, 2, 3, 5, 7, 9, 10];
+
+const BRIGHT_CHORDS = [
+  [60, 64, 67],    // C
+  [65, 69, 72],    // F
+  [67, 71, 74],    // G
+  [57, 60, 64],    // Am
 ];
-const SLEEP_CHORDS = [
-  [60, 64, 67, 71],  // Cmaj7
-  [65, 69, 72, 76],  // Fmaj7
-  [57, 60, 64, 67],  // Am7
-  [62, 66, 69, 73],  // D7
+const DREAM_CHORDS = [
+  [60, 64, 67, 71], // Cmaj7
+  [65, 69, 72, 76], // Fmaj7
+  [57, 60, 64, 67], // Am7
+  [55, 59, 62, 66], // Gmaj7/low
+  [62, 65, 69, 72], // Dm7
 ];
 
-function midiToFreq(midi) {
-  return 440 * Math.pow(2, (midi - 69) / 12);
-}
-
-function pick(arr) {
-  return arr[Math.floor(Math.random() * arr.length)];
-}
+function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+function lerp(a, b, t) { return a + (b - a) * t; }
 
 function startAudio() {
   Tone.start();
 
-  // Master chain
+  // ─── FX Chain ───
   masterReverb = new Tone.Reverb({ decay: 4, wet: 0.3 }).toDestination();
-  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass' }).connect(masterReverb);
-  masterGain = new Tone.Gain(0.7).connect(masterFilter);
+  masterDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.15, wet: 0.1 }).connect(masterReverb);
+  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass', rolloff: -12 }).connect(masterDelay);
+  masterGain = new Tone.Gain(0.65).connect(masterFilter);
 
-  // ─── MELODY (music box) ───
+  // ─── MELODY (music box / bell) ───
   melodySynth = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'triangle', partialCount: 3 },
-    envelope: { attack: 0.005, decay: 0.8, sustain: 0.1, release: 1.5 },
+    oscillator: { type: 'custom', partials: [1, 0.6, 0.3, 0.1, 0.05] },
+    envelope: { attack: 0.003, decay: 1.0, sustain: 0.05, release: 2 },
     volume: -8,
   }).connect(masterGain);
 
-  // ─── BELL / CHIME layer ───
+  // ─── BELL (high chimes) ───
   bellSynth = new Tone.PolySynth(Tone.Synth, {
-    oscillator: { type: 'sine', partialCount: 1 },
-    envelope: { attack: 0.001, decay: 1.5, sustain: 0, release: 2 },
-    volume: -14,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 2, sustain: 0, release: 3 },
+    volume: -16,
   }).connect(masterGain);
 
-  // ─── PAD (harmony drone) ───
+  // ─── PAD (drones) ───
   padSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'sine' },
-    envelope: { attack: 3, decay: 2, sustain: 0.8, release: 5 },
-    volume: -16,
+    envelope: { attack: 4, decay: 3, sustain: 0.7, release: 6 },
+    volume: -18,
   }).connect(masterGain);
 
   // ─── BASS ───
   bassSynth = new Tone.Synth({
-    oscillator: { type: 'sine' },
-    envelope: { attack: 0.5, decay: 1, sustain: 0.6, release: 3 },
-    volume: -18,
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.8, decay: 1.5, sustain: 0.5, release: 4 },
+    volume: -20,
   }).connect(masterGain);
 
-  // ─── NOISE / TEXTURE ───
-  noiseSynth = new Tone.Noise({ type: 'pink', volume: -30 }).connect(
-    new Tone.Filter({ frequency: 800, type: 'lowpass' }).connect(masterGain)
-  );
+  // ─── CLICK (soft rhythm) ───
+  clickSynth = new Tone.MembraneSynth({
+    pitchDecay: 0.01,
+    octaves: 2,
+    envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.1 },
+    volume: -24,
+  }).connect(masterGain);
+
+  // ─── NOISE ───
+  const noiseFilter = new Tone.Filter({ frequency: 600, type: 'lowpass' }).connect(masterGain);
+  noiseSynth = new Tone.Noise({ type: 'pink', volume: -32 }).connect(noiseFilter);
   noiseSynth.start();
 
-  // ─── MELODY LOOP ───
-  let melodyOctave = 72; // C5
-  let lastNote = 0;
+  // ─── MELODY SEQUENCER ───
+  let lastMelodyNote = -1;
+  let melodyHistory = [];
 
   melodyLoop = new Tone.Loop(time => {
-    const t = dialValue;
-    // Probability of playing decreases as we go to sleep
-    if (Math.random() > 0.3 + t * 0.5) return;
+    const x = xVal; // 0=melodic, 1=ambient
+    const y = yVal; // 0=sleep, 1=play
 
-    // Choose note from pentatonic scale
-    let interval;
-    do {
-      interval = pick(PENTATONIC);
-    } while (interval === lastNote && Math.random() > 0.3);
-    lastNote = interval;
+    // Note probability: high when melodic, lower when ambient
+    const noteProb = lerp(0.8, 0.15, x) * lerp(0.4, 1.0, y);
+    if (Math.random() > noteProb) return;
 
-    // Octave range changes with dial
-    const baseOctave = Math.round(60 + t * 12 + (Math.random() - 0.5) * 12);
-    const note = midiToFreq(baseOctave + interval);
+    // Scale: pentatonic for melodic, wider for ambient
+    const scale = x < 0.4 ? PENTATONIC : (x < 0.7 ? MAJOR : DORIAN);
 
-    // Note duration longer in sleep mode
-    const dur = 0.1 + (1 - t) * 0.4;
+    // Register: higher in play, lower in sleep
+    const baseNote = Math.round(lerp(60, 72, y) + (Math.random() - 0.5) * lerp(5, 14, x));
+    const interval = pick(scale);
+    const note = baseNote + interval;
 
-    melodySynth.triggerAttackRelease(note, dur, time, 0.3 + t * 0.4);
+    // Avoid repeating same note too much
+    if (note === lastMelodyNote && Math.random() > 0.3) return;
+    lastMelodyNote = note;
+
+    // Duration: short and snappy when melodic+play, longer when ambient/sleep
+    const dur = lerp(0.08, 0.6, x * 0.5 + (1 - y) * 0.5);
+
+    // Velocity
+    const vel = lerp(0.25, 0.55, y) * lerp(1.0, 0.5, x);
+
+    melodySynth.triggerAttackRelease(midiToFreq(note), dur, time, vel);
+
+    // Occasionally double-strike for music box feel when melodic
+    if (x < 0.3 && Math.random() > 0.7) {
+      const harm = note + pick([12, 7, 5]);
+      melodySynth.triggerAttackRelease(midiToFreq(harm), dur * 0.5, time + 0.05, vel * 0.4);
+    }
   }, '8n');
 
   // ─── BELL / CHIME LOOP ───
   bellLoop = new Tone.Loop(time => {
-    const t = dialValue;
-    if (Math.random() > 0.2 + t * 0.3) return;
+    const x = xVal, y = yVal;
+    // More bells in ambient mode
+    const prob = lerp(0.15, 0.45, x) * lerp(0.6, 1.0, 1 - y * 0.3);
+    if (Math.random() > prob) return;
 
     const interval = pick(PENTATONIC);
-    const octave = 84 + Math.floor(Math.random() * 12); // high register
+    const octave = lerp(84, 90, x) + Math.floor(Math.random() * 7);
     const note = midiToFreq(octave + interval);
-    bellSynth.triggerAttackRelease(note, 0.05, time, 0.1 + (1 - t) * 0.15);
+    const vel = lerp(0.08, 0.2, x) * lerp(0.5, 1.0, 1 - y * 0.5);
+    bellSynth.triggerAttackRelease(note, 0.03, time, vel);
   }, '4n');
 
-  // ─── RHYTHM LOOP ───
-  let rhythmStep = 0;
+  // ─── RHYTHM ───
+  let rStep = 0;
   rhythmLoop = new Tone.Loop(time => {
-    const t = dialValue;
-    rhythmStep++;
+    const x = xVal, y = yVal;
+    rStep++;
 
-    // Only play rhythm when dial is toward play
-    if (t < 0.3) return;
+    // Rhythm only present when y > 0.3 and x < 0.7
+    const rhythmAmount = Math.max(0, (y - 0.25) / 0.75) * Math.max(0, (0.8 - x) / 0.8);
+    if (rhythmAmount < 0.05) return;
 
-    const intensity = (t - 0.3) / 0.7; // 0 to 1 in play range
+    const is4 = rStep % 4 === 0;
+    const is8 = rStep % 2 === 0;
 
-    // Simple pattern
-    const isDownbeat = rhythmStep % 4 === 0;
-    const isUpbeat = rhythmStep % 2 === 0;
-
-    if (isDownbeat || (isUpbeat && intensity > 0.5) || (intensity > 0.8 && Math.random() > 0.5)) {
-      const note = midiToFreq(48 + pick([0, 7, 12]));
-      melodySynth.triggerAttackRelease(note, 0.05, time, 0.15 * intensity);
+    if (is4 || (is8 && rhythmAmount > 0.4) || (rhythmAmount > 0.7 && Math.random() > 0.6)) {
+      const pitch = is4 ? 60 : 80;
+      clickSynth.triggerAttackRelease(pitch, '32n', time, 0.3 * rhythmAmount);
     }
   }, '16n');
 
   // ─── CHORD DRIFT ───
   function playChord() {
-    const t = dialValue;
-    const chords = t > 0.5 ? CHORDS : SLEEP_CHORDS;
+    const x = xVal, y = yVal;
+
+    // Choose chord set based on position
+    const chords = x > 0.5 ? DREAM_CHORDS : BRIGHT_CHORDS;
     currentChordIndex = (currentChordIndex + 1) % chords.length;
+
+    // Occasionally skip a change for variety
+    if (Math.random() > 0.8) currentChordIndex = Math.floor(Math.random() * chords.length);
+
     const chord = chords[currentChordIndex];
 
-    // Release previous notes
     padSynth.releaseAll();
     bassSynth.triggerRelease();
 
-    // Play new chord
-    const padNotes = chord.map(n => midiToFreq(n));
-    padSynth.triggerAttack(padNotes, Tone.now(), 0.3);
+    // Pad: louder in ambient/sleep
+    const padVol = lerp(0.15, 0.5, x) * lerp(0.8, 0.4, y);
+    padSynth.triggerAttack(chord.map(midiToFreq), Tone.now(), padVol);
 
-    // Bass note
-    bassSynth.triggerAttack(midiToFreq(chord[0] - 12), Tone.now(), 0.5);
+    // Bass
+    const bassVol = lerp(0.3, 0.5, 1 - y);
+    bassSynth.triggerAttack(midiToFreq(chord[0] - 12), Tone.now(), bassVol);
   }
 
-  // Chord changes every 4-12 seconds depending on dial
   function scheduleChord() {
-    const t = dialValue;
-    const interval = 4000 + (1 - t) * 8000 + Math.random() * 4000;
+    const interval = lerp(8000, 4000, yVal) + lerp(0, 6000, xVal) + Math.random() * 3000;
     playChord();
-    driftInterval = setTimeout(scheduleChord, interval);
+    driftTimeout = setTimeout(scheduleChord, interval);
   }
 
-  // ─── START EVERYTHING ───
-  Tone.getTransport().bpm.value = 100;
+  // ─── START ───
+  Tone.getTransport().bpm.value = 90;
   Tone.getTransport().start();
   melodyLoop.start(0);
   bellLoop.start(0);
@@ -496,36 +541,46 @@ function startAudio() {
 
 function updateAudio() {
   if (!audioStarted) return;
-  const t = dialValue;
+  const x = xVal, y = yVal;
 
-  // BPM: 60 (sleep) to 120 (play)
-  Tone.getTransport().bpm.value = 60 + t * 60;
+  // BPM: sleep=55, play=115, ambient slows a bit
+  Tone.getTransport().bpm.rampTo(lerp(55, 115, y) * lerp(1.0, 0.8, x), 2);
 
-  // Reverb: wet 0.7 (sleep) to 0.2 (play)
-  masterReverb.wet.rampTo(0.7 - t * 0.5, 2);
-  masterReverb.decay = 2 + (1 - t) * 8;
+  // Reverb: ambient+sleep = very wet, melodic+play = drier
+  masterReverb.wet.rampTo(lerp(0.15, 0.6, x) + lerp(0.2, 0, y), 2);
 
-  // Filter: 1200 (sleep) to 8000 (play)
-  masterFilter.frequency.rampTo(1200 + t * 6800, 1);
+  // Delay: more in ambient
+  masterDelay.wet.rampTo(lerp(0.05, 0.3, x), 1.5);
+  masterDelay.feedback.rampTo(lerp(0.1, 0.35, x), 1.5);
 
-  // Melody volume: quieter in sleep
-  melodySynth.volume.rampTo(-12 + t * 6, 1);
+  // Filter: bright in play, dark in sleep; ambient slightly darker
+  const filterFreq = lerp(800, 8000, y) * lerp(1.0, 0.7, x);
+  masterFilter.frequency.rampTo(filterFreq, 1);
 
-  // Bell volume: present in both but different character
-  bellSynth.volume.rampTo(-18 + (1 - t) * 4, 1);
+  // Melody volume: loud in melodic, quiet in ambient
+  melodySynth.volume.rampTo(lerp(-6, -20, x), 1);
 
-  // Pad volume: louder in sleep
-  padSynth.volume.rampTo(-20 + (1 - t) * 8, 2);
+  // Melody envelope: snappy in play, longer in sleep
+  // (Can't easily ramp envelope but we handle this in the loop)
 
-  // Bass: subtle in play, more present in sleep
-  bassSynth.volume.rampTo(-22 + (1 - t) * 6, 2);
+  // Bell: more present in ambient
+  bellSynth.volume.rampTo(lerp(-20, -12, x), 1);
 
-  // Noise: more in sleep (like white noise / comfort)
-  noiseSynth.volume.rampTo(-35 + (1 - t) * 10, 2);
+  // Pad: louder in ambient+sleep
+  padSynth.volume.rampTo(lerp(-22, -12, x) + lerp(3, 0, y), 2);
 
-  // Melody loop interval
-  melodyLoop.interval = t > 0.5 ? '8n' : '4n';
-  bellLoop.interval = t > 0.5 ? '4n' : '2n';
+  // Bass
+  bassSynth.volume.rampTo(lerp(-22, -16, 1 - y), 2);
+
+  // Noise: more in sleep, more in ambient
+  noiseSynth.volume.rampTo(-36 + (1 - y) * 8 + x * 4, 2);
+
+  // Click: quiet in ambient
+  clickSynth.volume.rampTo(lerp(-20, -30, x), 1);
+
+  // Loop intervals adapt
+  melodyLoop.interval = y > 0.5 ? '8n' : (y > 0.25 ? '4n' : '2n');
+  bellLoop.interval = y > 0.5 ? '4n' : '2n';
 }
 
 </script>
