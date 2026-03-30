@@ -190,10 +190,10 @@
 
     <div id="app-logo">lil</div>
 
-    <div class="corner-label tl" id="lbl-tl">melodic · play</div>
-    <div class="corner-label tr" id="lbl-tr">ambient · play</div>
-    <div class="corner-label bl" id="lbl-bl">melodic · sleep</div>
-    <div class="corner-label br" id="lbl-br">ambient · sleep</div>
+    <div class="corner-label tl" id="lbl-tl">sing · play</div>
+    <div class="corner-label tr" id="lbl-tr">float · play</div>
+    <div class="corner-label bl" id="lbl-bl">sing · sleep</div>
+    <div class="corner-label br" id="lbl-br">float · sleep</div>
 
     <div id="field">
       <div id="start-prompt">tap anywhere</div>
@@ -269,35 +269,37 @@ function bilinearHex(tl, tr, bl, br, x, y) {
 function updateVisuals() {
   const x = xVal, y = yVal;
 
-  // Background: dark when sleep, lighter when play
-  const bgDark = bilinearHex('#1a0a1e', '#0a1a2e', '#1a0a1e', '#0a1a2e', x, y);
-  const bgLight = bilinearHex('#FFF8E0', '#E8F8F8', '#FFF0F0', '#F0F0FF', x, y);
-  document.body.style.backgroundColor = lerpColor(bgDark, bgLight, y * 0.7);
+  // Background: gets darker toward sleep, lighter toward play
+  const bgSleep = bilinearHex('#080810', '#060a14', '#080810', '#060a14', x, 0);
+  const bgPlay = bilinearHex('#FFF8E0', '#E8F8F8', '#FFF8E0', '#E8F8F8', x, 0);
+  document.body.style.backgroundColor = lerpColor(bgSleep, bgPlay, y);
 
   // Ball color
   const ballColor = bilinearHex(C_TL, C_TR, C_BL, C_BR, x, y);
   const ball = document.getElementById('ball');
   ball.style.backgroundColor = ballColor;
-  ball.style.boxShadow = `0 0 ${30 + y * 20}px ${ballColor}44`;
+  ball.style.boxShadow = `0 0 ${20 + (1 - y) * 40}px ${ballColor}77`;
 
   // Position ball
   const fieldRect = document.getElementById('field').getBoundingClientRect();
   ball.style.left = (fieldRect.left + x * fieldRect.width) + 'px';
   ball.style.top = (fieldRect.top + (1 - y) * fieldRect.height) + 'px';
 
-  // Text color
-  const textColor = y > 0.5 ? '#1a1a2e' : '#888899';
-  const textOpacity = y > 0.5 ? 0.6 : 0.4;
+  // Text: bright white in sleep (dark bg), dark in play (light bg)
+  const textColor = lerpColor('#ffffff', '#1a1a2e', y);
   document.querySelectorAll('.corner-label').forEach(el => el.style.color = textColor);
-  document.getElementById('app-logo').style.color = y > 0.5 ? '#1a1a2e' : '#ffffff';
+  document.getElementById('app-logo').style.color = textColor;
   document.getElementById('version').style.color = textColor;
   document.querySelectorAll('#grid .line').forEach(el => el.style.color = textColor);
+  const prompt = document.getElementById('start-prompt');
+  if (prompt) prompt.style.color = textColor;
 
-  // Highlight nearest corner label
-  document.querySelectorAll('.corner-label').forEach(el => el.style.opacity = 0.1);
+  // Labels: brighter in sleep, dimmer in play
+  const baseLabelOpacity = lerp(0.35, 0.08, y);
+  document.querySelectorAll('.corner-label').forEach(el => el.style.opacity = baseLabelOpacity);
   const nearest = x < 0.5 ? (y > 0.5 ? 'tl' : 'bl') : (y > 0.5 ? 'tr' : 'br');
   const dist = Math.sqrt(Math.pow(x < 0.5 ? x : 1 - x, 2) + Math.pow(y > 0.5 ? 1 - y : y, 2));
-  document.getElementById('lbl-' + nearest).style.opacity = 0.1 + (1 - dist) * 0.5;
+  document.getElementById('lbl-' + nearest).style.opacity = baseLabelOpacity + (1 - dist) * 0.35;
 }
 
 // ─── INTERACTION ───
