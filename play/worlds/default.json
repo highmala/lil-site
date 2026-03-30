@@ -1,0 +1,89 @@
+{
+  "meta": {
+    "id": "default",
+    "name": "Default",
+    "artist": "lil",
+    "version": "0.1",
+    "description": "Built-in synthesis world — placeholder for artist worlds"
+  },
+
+  "colors": {
+    "singPlay":  "#FFD60A",
+    "floatPlay":  "#4ECDC4",
+    "singSleep":  "#FF6B6B",
+    "floatSleep": "#5E5CE6"
+  },
+
+  "tempo": {
+    "sleep": 55,
+    "play": 115,
+    "floatMultiplier": 0.85
+  },
+
+  "chords": {
+    "singPlay": [
+      { "pad": [60,64,67], "bass": 48, "scale": [0,2,4,7,9] },
+      { "pad": [65,69,72], "bass": 53, "scale": [0,2,4,7,9] },
+      { "pad": [67,71,74], "bass": 55, "scale": [0,2,4,7,9] },
+      { "pad": [57,60,64], "bass": 45, "scale": [0,2,4,7,9] }
+    ],
+    "singSleep": [
+      { "pad": [57,60,64,67], "bass": 45, "scale": [0,3,5,7,10] },
+      { "pad": [60,63,67,70], "bass": 48, "scale": [0,3,5,7,10] },
+      { "pad": [65,68,72,75], "bass": 53, "scale": [0,3,5,7,10] },
+      { "pad": [58,62,65,69], "bass": 46, "scale": [0,2,4,7,9] }
+    ],
+    "floatPlay": [
+      { "pad": [60,64,67,71], "bass": 48, "scale": [0,2,4,6,7,9,11] },
+      { "pad": [62,66,69,73], "bass": 50, "scale": [0,2,4,6,7,9,11] },
+      { "pad": [64,68,71,76], "bass": 52, "scale": [0,2,4,6,7,9,11] },
+      { "pad": [67,71,74,78], "bass": 55, "scale": [0,2,4,6,7,9,11] }
+    ],
+    "floatSleep": [
+      { "pad": [48,55,60,67], "bass": 36, "scale": [0,2,4,7,9] },
+      { "pad": [50,57,62,69], "bass": 38, "scale": [0,2,4,7,9] },
+      { "pad": [53,60,65,72], "bass": 41, "scale": [0,2,4,7,9] },
+      { "pad": [45,52,57,64], "bass": 33, "scale": [0,2,4,7,9] }
+    ],
+    "barsPerChord": 2
+  },
+
+  "synths": {
+    "musicBox": {
+      "type": "synth",
+      "oscillator": { "type": "custom", "partials": [1, 0.8, 0.4, 0.2, 0.1] },
+      "envelope": { "attack": 0.002, "decay": 0.5, "sustain": 0.02, "release": 1.2 }
+    },
+    "vocal": {
+      "type": "fm",
+      "harmonicity": 2.01,
+      "modulationIndex": 1.5,
+      "envelope": { "attack": 0.15, "decay": 1.8, "sustain": 0.4, "release": 3 }
+    },
+    "bell": {
+      "type": "synth",
+      "oscillator": { "type": "sine" },
+      "envelope": { "attack": 0.001, "decay": 2.5, "sustain": 0, "release": 4 }
+    },
+    "pad": {
+      "type": "fm",
+      "harmonicity": 1.005,
+      "modulationIndex": 0.5,
+      "envelope": { "attack": 4, "decay": 3, "sustain": 0.7, "release": 6 }
+    },
+    "bass": {
+      "type": "synth",
+      "oscillator": { "type": "triangle" },
+      "envelope": { "attack": 0.05, "decay": 1.5, "sustain": 0.3, "release": 2 }
+    }
+  },
+
+  "samples": null,
+
+  "fx": {
+    "reverb": { "decayMin": 2, "decayMax": 10 },
+    "delay": { "time": "8n.", "feedbackMin": 0.08, "feedbackMax": 0.38 },
+    "filterMin": 700,
+    "filterMax": 9000
+  }
+}
