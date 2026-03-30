@@ -473,38 +473,33 @@ function startAudio() {
   masterGain = new Tone.Gain(0.6).connect(masterFilter);
 
   // ─── MELODY REVERB (dedicated send for melodic elements) ───
-  const melodyReverb = new Tone.Reverb({ decay: 2.5, wet: 0.3 }).connect(masterGain);
+  const melodyReverb = new Tone.Reverb({ decay: 1.8, wet: 0.25 }).connect(masterGain);
 
   // ─── SYNTHS ───
-  musicBoxSynth = new Tone.PolySynth(Tone.Synth, {
-    maxPolyphony: 6,
+  musicBoxSynth = new Tone.Synth({
     oscillator: { type: 'custom', partials: [1, 0.8, 0.4, 0.2, 0.1] },
-    envelope: { attack: 0.002, decay: 0.5, sustain: 0.02, release: 1.2 },
+    envelope: { attack: 0.002, decay: 0.4, sustain: 0, release: 0.8 },
     volume: -8,
   }).connect(melodyReverb);
 
-  vocalSynth = new Tone.PolySynth(Tone.FMSynth, {
-    maxPolyphony: 4,
+  vocalSynth = new Tone.FMSynth({
     harmonicity: 2.01, modulationIndex: 1.5,
     oscillator: { type: 'triangle' }, modulation: { type: 'sine' },
-    envelope: { attack: 0.15, decay: 1.8, sustain: 0.4, release: 3 },
-    modulationEnvelope: { attack: 0.3, decay: 0.8, sustain: 0.3, release: 2 },
+    envelope: { attack: 0.15, decay: 1.2, sustain: 0.2, release: 1.5 },
+    modulationEnvelope: { attack: 0.3, decay: 0.8, sustain: 0.3, release: 1.5 },
     volume: -12,
   }).connect(melodyReverb);
 
-  bellSynth = new Tone.PolySynth(Tone.Synth, {
-    maxPolyphony: 4,
+  bellSynth = new Tone.Synth({
     oscillator: { type: 'sine' },
-    envelope: { attack: 0.001, decay: 2.5, sustain: 0, release: 4 },
+    envelope: { attack: 0.001, decay: 1.5, sustain: 0, release: 2 },
     volume: -16,
   }).connect(melodyReverb);
 
-  padSynth = new Tone.PolySynth(Tone.FMSynth, {
-    maxPolyphony: 6,
-    harmonicity: 1.005, modulationIndex: 0.5,
-    oscillator: { type: 'sine' }, modulation: { type: 'triangle' },
-    envelope: { attack: 4, decay: 3, sustain: 0.7, release: 6 },
-    modulationEnvelope: { attack: 5, decay: 4, sustain: 0.5, release: 6 },
+  padSynth = new Tone.PolySynth(Tone.Synth, {
+    maxPolyphony: 4,
+    oscillator: { type: 'sine' },
+    envelope: { attack: 2, decay: 2, sustain: 0.6, release: 3 },
     volume: -18,
   }).connect(masterGain);
 
@@ -555,11 +550,11 @@ function startAudio() {
     currentPadNotes = ch.pad;
     currentBassNote = ch.bass;
 
-    // Play pad
-    padSynth.releaseAll();
+    // Play pad — release all old voices first, small delay to let release happen
+    padSynth.releaseAll(time);
     const x = xVal, y = yVal;
     const padVol = lerp(0.2, 0.5, x * 0.5 + (1 - y) * 0.5);
-    padSynth.triggerAttack(ch.pad.map(midiToFreq), time, padVol);
+    padSynth.triggerAttack(ch.pad.map(midiToFreq), time + 0.1, padVol);
 
     // Play bass — same root, same time
     bassSynth.triggerRelease(time);
