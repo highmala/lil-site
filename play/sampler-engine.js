@@ -53,7 +53,7 @@
     console.log('[sampler] init:', worldName);
 
     // 1. Load world config
-    const resp = await fetch('worlds/' + worldName + '.json');
+    const resp = await fetch('/play/worlds/' + worldName + '.json');
     if (!resp.ok) throw new Error('World JSON not found: ' + resp.status);
     world = await resp.json();
     console.log('[sampler] world loaded:', world.meta.name);
@@ -66,7 +66,7 @@
 
     // 3. Create samplers (all connect to sGain)
     const ws = world.samples;
-    const base = 'worlds/';
+    const base = '/play/worlds/';
 
     // Melody: Tone.Sampler with note URLs
     const melUrls = {};
