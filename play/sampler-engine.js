@@ -172,15 +172,10 @@ function updateSamplerAudio() {
   masterGain.gain.value = world.mix.master * (isMuted ? 0 : 1);
 }
 
-// Hook into existing UI
-const originalStartAudio = window.startAudio;
-window.startAudio = startSamplerAudio;
-
-const originalUpdateAudio = window.updateAudio;
-window.updateAudio = function() {
-  if (currentWorld) {
-    updateSamplerAudio();
-  } else {
-    originalUpdateAudio();
-  }
+// Only activate sampler engine when ?world= is present
+// The main index.html checks for this and calls startSamplerAudio instead of startAudio
+window._samplerEngine = {
+  start: startSamplerAudio,
+  update: updateSamplerAudio,
+  isActive: () => !!currentWorld
 };

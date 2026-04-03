@@ -417,8 +417,13 @@ function initApp() {
         if (Tone.getContext().rawContext.state === 'suspended') {
           Tone.getContext().rawContext.resume();
         }
-        startAudio();
-        startAudioControlLoop();
+        const worldParam = new URLSearchParams(window.location.search).get('world');
+        if (worldParam && window._samplerEngine) {
+          window._samplerEngine.start();
+        } else {
+          startAudio();
+          startAudioControlLoop();
+        }
       });
     }
     isDragging = true;
@@ -750,6 +755,9 @@ function startAudio() {
 }
 
 function updateAudio() {
+  if (window._samplerEngine && window._samplerEngine.isActive()) {
+    return window._samplerEngine.update();
+  }
   if (!audioStarted || isMuted) return;
   const x = xVal, y = yVal;
 
