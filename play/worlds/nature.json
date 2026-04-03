@@ -10,99 +10,32 @@
   },
   "barsPerChord": 4,
   "corners": {
-    "sp": {
-      "scale": [
-        0,
-        2,
-        4,
-        7,
-        9
-      ],
-      "melDensity": 0.6,
-      "melLow": 60,
-      "melHigh": 84,
-      "kick": 0.3,
-      "hat": 0.4,
-      "swing": 0.1
-    },
-    "ss": {
-      "scale": [
-        0,
-        3,
-        5,
-        7,
-        10
-      ],
-      "melDensity": 0.3,
-      "melLow": 72,
-      "melHigh": 78
-    },
-    "fp": {
-      "scale": [
-        0,
-        2,
-        4,
-        6,
-        7,
-        9,
-        11
-      ],
-      "bellDensity": 0.4,
-      "bellReg": 84
-    },
-    "fs": {
-      "scale": [
-        0,
-        2,
-        4,
-        7,
-        9
-      ],
-      "pad": 0.8,
-      "noise": 0.6
-    }
+    "sp": { "scale": [0,2,4,7,9], "melDensity": 0.6, "kick": 0.3, "hat": 0.4, "swing": 0.1 },
+    "ss": { "scale": [0,3,5,7,10], "melDensity": 0.15 },
+    "fp": { "scale": [0,2,4,6,7,9,11], "bellDensity": 0.4 },
+    "fs": { "scale": [0,2,4,7,9], "pad": 0.8, "noise": 0.6 }
   },
-  "mix": {
-    "musicbox": 0.5,
-    "vocal": 0.4,
-    "bell": 0.3,
-    "pad": 0.7,
-    "bass": 0.5,
-    "kick": 0.4,
-    "master": 0.65
-  },
+  "mix": { "master": 0.65 },
   "fx": {
     "melReverb": 0.5,
-    "decayMin": 4,
-    "decayMax": 12,
-    "fbMin": 0.1,
-    "fbMax": 0.4,
-    "filtMin": 800,
-    "filtMax": 6000
+    "decayMin": 4, "decayMax": 12,
+    "fbMin": 0.1, "fbMax": 0.4,
+    "filtMin": 800, "filtMax": 6000
   },
-  "colors": {
-    "sp": "#90EE90",
-    "fp": "#228B22",
-    "ss": "#8B4513",
-    "fs": "#2F4F4F"
-  },
+  "colors": { "sp": "#90EE90", "fp": "#228B22", "ss": "#8B4513", "fs": "#2F4F4F" },
   "samples": {
-    "melody": "nature/samples/melody-{note}.wav",
+    "leads": {
+      "sp": "nature/samples/lead-sp-chirp.wav",
+      "ss": "nature/samples/lead-ss-owl.wav",
+      "fp": "nature/samples/lead-fp-waterdrop.wav",
+      "fs": "nature/samples/lead-fs-wind.wav"
+    },
     "bell": "nature/samples/bell-high.wav",
-    "pad": [
-      "nature/samples/pad-warm.wav",
-      "nature/samples/pad-bright.wav"
-    ],
-    "bass": "nature/samples/bass-{note}.wav",
+    "pad": ["nature/samples/pad-warm.wav", "nature/samples/pad-bright.wav"],
+    "bass": "nature/samples/bass-low.wav",
     "kick": "nature/samples/kick.wav",
     "hat": "nature/samples/hat.wav",
     "rim": "nature/samples/rim.wav",
-    "atmosphere": "nature/samples/atmosphere.wav",
-    "leads": {
-      "sp": "nature/samples/lead-sp-{note}.wav",
-      "ss": "nature/samples/lead-ss-{note}.wav",
-      "fp": "nature/samples/lead-fp-{note}.wav",
-      "fs": "nature/samples/lead-fs-{note}.wav"
-    }
+    "atmosphere": "nature/samples/atmosphere.wav"
   }
 }

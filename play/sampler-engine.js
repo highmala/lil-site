@@ -1,5 +1,5 @@
-// ═══ SAMPLER-BASED AUDIO ENGINE ═══
-// 4 distinct lead instruments per corner + unique musical behavior
+// ═══ SAMPLER ENGINE — ElevenLabs SFX-based ═══
+// All sounds are Tone.Player (one-shots/loops), no pitched Samplers
 
 (function() {
   'use strict';
@@ -8,37 +8,7 @@
   let S = {};
   let sGain, sReverb, sDelay, sFilter;
   let sLoop, sStarted = false;
-  let step = 0, chordIdx = 0;
-
-  const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
-  function midiToName(m) { return NOTES[m % 12] + Math.floor(m / 12 - 1); }
-
-  const CHORDS = {
-    sp: [
-      { pad: [60,64,67], bass: 48 },
-      { pad: [65,69,72], bass: 53 },
-      { pad: [67,71,74], bass: 55 },
-      { pad: [57,60,64], bass: 45 },
-    ],
-    ss: [
-      { pad: [57,60,64,67], bass: 45 },
-      { pad: [60,64,67,71], bass: 48 },
-      { pad: [65,69,72,76], bass: 53 },
-      { pad: [62,66,69,73], bass: 50 },
-    ],
-    fp: [
-      { pad: [60,64,67,71], bass: 48 },
-      { pad: [62,66,69,73], bass: 50 },
-      { pad: [64,68,71,76], bass: 52 },
-      { pad: [67,71,74,78], bass: 55 },
-    ],
-    fs: [
-      { pad: [48,55,60,67], bass: 36 },
-      { pad: [50,57,62,69], bass: 38 },
-      { pad: [53,60,65,72], bass: 41 },
-      { pad: [45,52,57,64], bass: 33 },
-    ]
-  };
+  let step = 0;
 
   function corner(x, y) {
     if (x < 0.5 && y >= 0.5) return 'sp';
@@ -63,42 +33,21 @@
 
     const ws = world.samples;
     const base = '/play/worlds/';
-    const noteList = ['C4','D4','E4','G4','A4','C5','D5','E5'];
 
-    // ─── 4 LEAD SAMPLERS (one per corner) ───
+    // 4 lead Players (one per corner)
     S.leads = {};
-    if (ws.leads) {
-      for (const c of ['sp','ss','fp','fs']) {
-        const urls = {};
-        noteList.forEach(n => {
-          urls[n] = base + ws.leads[c].replace('{note}', n);
-        });
-        S.leads[c] = new Tone.Sampler({ urls: urls }).connect(sGain);
-      }
-    } else {
-      // Fallback: use single melody sampler for all corners
-      const melUrls = {};
-      noteList.forEach(n => {
-        melUrls[n] = base + ws.melody.replace('{note}', n);
-      });
-      const mel = new Tone.Sampler({ urls: melUrls }).connect(sGain);
-      S.leads = { sp: mel, ss: mel, fp: mel, fs: mel };
+    for (const c of ['sp','ss','fp','fs']) {
+      S.leads[c] = new Tone.Player(base + ws.leads[c]).connect(sGain);
     }
 
-    // Bass sampler
-    const bassUrls = {};
-    ['C2','F2'].forEach(n => {
-      bassUrls[n] = base + ws.bass.replace('{note}', n);
-    });
-    S.bass = new Tone.Sampler({ urls: bassUrls }).connect(sGain);
-
-    // One-shots
+    // Rhythm one-shots
     S.kick = new Tone.Player(base + ws.kick).connect(sGain);
     S.hat  = new Tone.Player(base + ws.hat).connect(sGain);
     S.rim  = new Tone.Player(base + ws.rim).connect(sGain);
     S.bell = new Tone.Player(base + ws.bell).connect(sGain);
+    S.bass = new Tone.Player(base + ws.bass).connect(sGain);
 
-    // Pads (looping)
+    // Pad loops
     const padFiles = Array.isArray(ws.pad) ? ws.pad : [ws.pad];
     S.pads = padFiles.map(u => {
       const p = new Tone.Player(base + u).connect(sGain);
@@ -106,25 +55,24 @@
       return p;
     });
 
-    // Atmosphere (looping)
+    // Atmosphere loop
     S.atmo = new Tone.Player(base + ws.atmosphere).connect(sGain);
     S.atmo.loop = true;
 
     await Tone.loaded();
     console.log('[sampler] all buffers loaded');
 
-    // Start loopers quietly
+    // Start loopers (muted, controlled by update)
     S.pads.forEach(p => { p.volume.value = -40; p.start(); });
     S.atmo.volume.value = -50;
     S.atmo.start();
 
     // ═══ SEQUENCER ═══
-    // Corner behaviors:
     //
-    // HUM+PLAY (sp):  Bird chirps / "Da" — fast, rhythmic, drums + frequent short leads
-    // HUM+SLEEP (ss): Owl hoots / "Ooh" — sparse, slow, long sustained leads, no drums
-    // GLOW+PLAY (fp): Water drops / "Ee" — sparkly bells, light rhythm, plucky leads
-    // GLOW+SLEEP (fs): Wind / "Ahh" — deep drone, pads+atmo dominate, rare ghostly leads
+    // HUM+PLAY (sp):  Rhythmic — kick, hat, bass, frequent lead triggers
+    // HUM+SLEEP (ss): Sparse — rare lead triggers, no drums, breathing space
+    // GLOW+PLAY (fp): Sparkly — bells, rim, plucky lead
+    // GLOW+SLEEP (fs): Drone — pads+atmo dominate, very rare ghostly lead
 
     const BPC = world.barsPerChord || 2;
     const STEPS = 8;
@@ -139,106 +87,83 @@
       const wFP = x * y;
       const wFS = x * (1 - y);
 
-      const c = corner(x, y);
-      const cfg = world.corners[c];
-      const chords = CHORDS[c];
       const beat = step % STEPS;
 
-      if (step % (STEPS * BPC) === 0) {
-        chordIdx = (chordIdx + 1) % chords.length;
-      }
-      const ch = chords[chordIdx];
-      const scale = cfg.scale || [0,2,4,7,9];
-
-      // Helper: pick note from scale in MIDI range
-      function pickNote(lo, hi) {
-        const pool = [];
-        for (let m = lo; m <= hi; m++) {
-          if (scale.includes(m % 12)) pool.push(m);
-        }
-        return pool.length ? pool[Math.floor(Math.random() * pool.length)] : null;
-      }
-
-      // ═══ HUM+PLAY CORNER: Rhythmic energy ═══
+      // ═══ HUM+PLAY: Full energy ═══
       if (wSP > 0.15) {
         // Kick on 1 and 3
         if ((beat === 0 || beat === 4) && Math.random() < wSP * 0.85) {
-          S.kick.volume.value = lerp(-30, -6, wSP);
+          S.kick.volume.value = lerp(-28, -4, wSP);
           S.kick.start(time);
         }
         // Hat on even 8ths
-        if (beat % 2 === 0 && Math.random() < wSP * 0.7) {
-          S.hat.volume.value = lerp(-28, -10, wSP);
+        if (beat % 2 === 0 && Math.random() < wSP * 0.65) {
+          S.hat.volume.value = lerp(-26, -8, wSP);
           S.hat.start(time);
-        }
-        // SP lead: frequent, short, bright (bird chirps / "da")
-        if (Math.random() < wSP * 0.6) {
-          const n = pickNote(cfg.melLow || 60, cfg.melHigh || 84);
-          if (n) {
-            S.leads.sp.volume.value = lerp(-20, -4, wSP);
-            S.leads.sp.triggerAttackRelease(midiToName(n), '8n', time);
-          }
         }
         // Bass on beat 1
         if (beat === 0) {
-          S.bass.volume.value = lerp(-20, -6, wSP);
-          S.bass.triggerAttackRelease(midiToName(ch.bass), '2n', time);
+          S.bass.volume.value = lerp(-22, -6, wSP);
+          S.bass.start(time);
+        }
+        // Lead: bird chirps / vocal "da" — frequent, rhythmic
+        if (Math.random() < wSP * 0.45) {
+          S.leads.sp.volume.value = lerp(-18, -2, wSP);
+          // Pitch-shift by changing playbackRate slightly for variety
+          S.leads.sp.playbackRate = 0.8 + Math.random() * 0.8;
+          S.leads.sp.start(time);
         }
       }
 
-      // ═══ HUM+SLEEP CORNER: Sparse, meditative ═══
+      // ═══ HUM+SLEEP: Sparse, meditative ═══
       if (wSS > 0.15) {
-        // SS lead: rare, long, low (owl hoots / "ooh")
-        if (beat === 0 && Math.random() < wSS * 0.25) {
-          const n = pickNote((cfg.melLow || 60), Math.min((cfg.melLow || 60) + 8, cfg.melHigh || 72));
-          if (n) {
-            S.leads.ss.volume.value = lerp(-24, -8, wSS);
-            S.leads.ss.triggerAttackRelease(midiToName(n), '1n', time);
-          }
+        // Lead: owl hoot / "ooh" — rare, slow
+        if (beat === 0 && Math.random() < wSS * 0.15) {
+          S.leads.ss.volume.value = lerp(-22, -6, wSS);
+          S.leads.ss.playbackRate = 0.7 + Math.random() * 0.3;
+          S.leads.ss.start(time);
         }
-        // Very occasional deep bass
-        if (beat === 0 && step % (STEPS * 2) === 0 && Math.random() < wSS * 0.3) {
-          S.bass.volume.value = lerp(-24, -12, wSS);
-          S.bass.triggerAttackRelease(midiToName(ch.bass), '1n', time);
+        // Very rare bass
+        if (beat === 0 && step % (STEPS * 4) === 0 && Math.random() < wSS * 0.2) {
+          S.bass.volume.value = lerp(-28, -14, wSS);
+          S.bass.playbackRate = 0.6;
+          S.bass.start(time);
         }
       }
 
-      // ═══ GLOW+PLAY CORNER: Sparkly, airy ═══
+      // ═══ GLOW+PLAY: Sparkly, airy ═══
       if (wFP > 0.15) {
-        // Bell sparkles
-        if ((beat === 0 || beat === 2 || beat === 4 || beat === 6) && Math.random() < wFP * 0.5) {
-          S.bell.volume.value = lerp(-24, -6, wFP);
+        // Bells
+        if ((beat === 0 || beat === 2 || beat === 4 || beat === 6) && Math.random() < wFP * 0.45) {
+          S.bell.volume.value = lerp(-22, -4, wFP);
+          S.bell.playbackRate = 0.8 + Math.random() * 0.6;
           S.bell.start(time);
         }
         // Rim on offbeats
-        if ((beat === 3 || beat === 7) && Math.random() < wFP * 0.5) {
+        if ((beat === 3 || beat === 7) && Math.random() < wFP * 0.4) {
           S.rim.volume.value = lerp(-22, -8, wFP);
           S.rim.start(time);
         }
-        // FP lead: plucky, mid-density (water drops / "ee")
-        if (Math.random() < wFP * 0.4) {
-          const n = pickNote((cfg.bellReg || 80) - 8, (cfg.bellReg || 80) + 8);
-          if (n) {
-            S.leads.fp.volume.value = lerp(-22, -6, wFP);
-            S.leads.fp.triggerAttackRelease(midiToName(n), '4n', time);
-          }
+        // Lead: water drops / "ee" — mid-density plucky
+        if (Math.random() < wFP * 0.3) {
+          S.leads.fp.volume.value = lerp(-20, -4, wFP);
+          S.leads.fp.playbackRate = 0.7 + Math.random() * 0.8;
+          S.leads.fp.start(time);
         }
         // Light bass
-        if (beat === 0 && Math.random() < wFP * 0.4) {
+        if (beat === 0 && Math.random() < wFP * 0.3) {
           S.bass.volume.value = lerp(-24, -12, wFP);
-          S.bass.triggerAttackRelease(midiToName(ch.bass), '2n', time);
+          S.bass.start(time);
         }
       }
 
-      // ═══ GLOW+SLEEP CORNER: Deep drone ═══
+      // ═══ GLOW+SLEEP: Deep drone ═══
       if (wFS > 0.15) {
-        // FS lead: very rare, ghostly, long (wind / "ahh")
-        if (beat === 0 && step % (STEPS * 4) === 0 && Math.random() < wFS * 0.3) {
-          const n = pickNote(48, 60);
-          if (n) {
-            S.leads.fs.volume.value = lerp(-28, -10, wFS);
-            S.leads.fs.triggerAttackRelease(midiToName(n), '2n', time);
-          }
+        // Lead: wind / "ahh" — very rare, ghostly
+        if (beat === 0 && step % (STEPS * 6) === 0 && Math.random() < wFS * 0.25) {
+          S.leads.fs.volume.value = lerp(-24, -8, wFS);
+          S.leads.fs.playbackRate = 0.5 + Math.random() * 0.3;
+          S.leads.fs.start(time);
         }
       }
 
@@ -274,23 +199,23 @@
       // Tempo
       Tone.getTransport().bpm.value = lerp(world.tempo.sleep, world.tempo.play, y) * lerp(1.0, world.tempo.glowMult, x);
 
-      // Reverb: dry in sp, wet in fs
-      sReverb.wet.value = wSP * 0.1 + wSS * 0.35 + wFP * 0.3 + wFS * 0.65;
+      // Reverb: dry in sp, soaked in fs
+      sReverb.wet.value = wSP * 0.1 + wSS * 0.4 + wFP * 0.3 + wFS * 0.7;
 
-      // Delay: glow side
-      sDelay.wet.value = lerp(0.0, 0.25, x);
+      // Delay: glow side only
+      sDelay.wet.value = lerp(0.0, 0.3, x);
       sDelay.feedback.value = lerp(world.fx.fbMin, world.fx.fbMax, x);
 
-      // Filter: bright in play, dark in sleep
-      sFilter.frequency.value = wSP * 8000 + wSS * 1200 + wFP * 6000 + wFS * 800;
+      // Filter: bright play, dark sleep
+      sFilter.frequency.value = wSP * 8000 + wSS * 1200 + wFP * 6000 + wFS * 700;
 
-      // Pad: quiet in sp, LOUD in fs
-      const padVol = wSP * 0.05 + wSS * 0.4 + wFP * 0.3 + wFS * 0.9;
-      S.pads.forEach(p => { p.volume.value = lerp(-40, -6, padVol); });
+      // Pad: quiet in sp, loud in fs
+      const padVol = wSP * 0.03 + wSS * 0.4 + wFP * 0.25 + wFS * 0.95;
+      S.pads.forEach(p => { p.volume.value = lerp(-45, -4, padVol); });
 
       // Atmosphere: silent in sp, dominant in fs
-      const atmoVol = wSP * 0.0 + wSS * 0.15 + wFP * 0.1 + wFS * 0.8;
-      S.atmo.volume.value = lerp(-50, -8, atmoVol);
+      const atmoVol = wSP * 0.0 + wSS * 0.2 + wFP * 0.1 + wFS * 0.85;
+      S.atmo.volume.value = lerp(-50, -6, atmoVol);
 
       sGain.gain.value = world.mix.master;
     },
