@@ -412,17 +412,25 @@ function initApp() {
       // Try sync first (Safari), then async fallback (Chrome)
       const ctx = Tone.getContext().rawContext;
       if (ctx.state === 'suspended') ctx.resume();
-      Tone.start().then(() => {
+      Tone.start().then(async () => {
         if (Tone.getContext().rawContext.state === 'suspended') {
           Tone.getContext().rawContext.resume();
         }
         const worldParam = new URLSearchParams(window.location.search).get('world');
         if (worldParam && window._samplerEngine) {
-          window._samplerEngine.start();
-        } else {
-          startAudio();
-          startAudioControlLoop();
+          try {
+            const ok = await window._samplerEngine.start();
+            if (ok) {
+              console.log('[lil] sampler engine started for world:', worldParam);
+              return;
+            }
+          } catch(err) {
+            console.error('[lil] sampler failed, falling back to synth:', err);
+          }
         }
+        // Default: synth engine
+        startAudio();
+        startAudioControlLoop();
       });
     }
     isDragging = true;
