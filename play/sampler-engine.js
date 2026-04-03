@@ -1,20 +1,18 @@
 // ═══ SAMPLER-BASED AUDIO ENGINE ═══
-// Activates when ?world= URL param is present
+// Each corner has genuinely different musical behavior
 
 (function() {
   'use strict';
 
   let world = null;
-  let S = {}; // samplers
+  let S = {};
   let sGain, sReverb, sDelay, sFilter;
   let sLoop, sStarted = false;
   let step = 0, chordIdx = 0;
 
   const NOTES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   function midiToName(m) { return NOTES[m % 12] + Math.floor(m / 12 - 1); }
-  function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
 
-  // Chord progressions per corner
   const CHORDS = {
     sp: [
       { pad: [60,64,67], bass: 48 },
@@ -52,43 +50,38 @@
   async function init(worldName) {
     console.log('[sampler] init:', worldName);
 
-    // 1. Load world config
     const resp = await fetch('/play/worlds/' + worldName + '.json');
     if (!resp.ok) throw new Error('World JSON not found: ' + resp.status);
     world = await resp.json();
     console.log('[sampler] world loaded:', world.meta.name);
 
-    // 2. Build FX chain
+    // FX chain
     sReverb = new Tone.Reverb({ decay: world.fx.decayMin, wet: 0.3 }).toDestination();
     sDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: world.fx.fbMin, wet: 0.05 }).connect(sReverb);
     sFilter = new Tone.Filter({ frequency: world.fx.filtMax, type: 'lowpass', rolloff: -12 }).connect(sDelay);
     sGain = new Tone.Gain(world.mix.master).connect(sFilter);
 
-    // 3. Create samplers (all connect to sGain)
+    // Load samples
     const ws = world.samples;
     const base = '/play/worlds/';
 
-    // Melody: Tone.Sampler with note URLs
     const melUrls = {};
     ['C4','D4','E4','G4','A4','C5','D5','E5'].forEach(n => {
       melUrls[n] = base + ws.melody.replace('{note}', n);
     });
     S.melody = new Tone.Sampler({ urls: melUrls }).connect(sGain);
 
-    // Bass: Tone.Sampler
     const bassUrls = {};
     ['C2','F2'].forEach(n => {
       bassUrls[n] = base + ws.bass.replace('{note}', n);
     });
     S.bass = new Tone.Sampler({ urls: bassUrls }).connect(sGain);
 
-    // One-shot Players
     S.kick = new Tone.Player(base + ws.kick).connect(sGain);
     S.hat  = new Tone.Player(base + ws.hat).connect(sGain);
     S.rim  = new Tone.Player(base + ws.rim).connect(sGain);
     S.bell = new Tone.Player(base + ws.bell).connect(sGain);
 
-    // Pad Players (looping)
     const padFiles = Array.isArray(ws.pad) ? ws.pad : [ws.pad];
     S.pads = padFiles.map(u => {
       const p = new Tone.Player(base + u).connect(sGain);
@@ -96,83 +89,121 @@
       return p;
     });
 
-    // Atmosphere (looping)
     S.atmo = new Tone.Player(base + ws.atmosphere).connect(sGain);
     S.atmo.loop = true;
 
-    // 4. Wait for ALL buffers
     await Tone.loaded();
     console.log('[sampler] all buffers loaded');
 
-    // 5. Start loopers
-    S.pads.forEach(p => { p.volume.value = -14; p.start(); });
-    S.atmo.volume.value = -22;
+    // Start loopers (volume controlled by update)
+    S.pads.forEach(p => { p.volume.value = -30; p.start(); });
+    S.atmo.volume.value = -40;
     S.atmo.start();
 
-    // 6. Start sequencer
+    // ═══ SEQUENCER ═══
+    // Each corner has fundamentally different behavior:
+    //
+    // HUM+PLAY (sp):  Rhythmic + melodic. Kick, hat, melody, bass. Bright, energetic.
+    // HUM+SLEEP (ss): Sparse melody only. No drums. Slow, dark, breathing.
+    // GLOW+PLAY (fp): Bells + shimmer. Light rhythm (rim only). Sparkly, airy.
+    // GLOW+SLEEP (fs): Pure atmosphere. Pads + noise. Almost no notes. Deep drone.
+
     const BPC = world.barsPerChord || 2;
     const STEPS = 8;
 
     sLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+
+      // Weights for each corner (bilinear interpolation)
+      const wSP = (1 - x) * y;       // hum + play
+      const wSS = (1 - x) * (1 - y); // hum + sleep
+      const wFP = x * y;              // glow + play
+      const wFS = x * (1 - y);        // glow + sleep
+
       const c = corner(x, y);
       const cfg = world.corners[c];
       const chords = CHORDS[c];
       const beat = step % STEPS;
 
-      // Chord change
       if (step % (STEPS * BPC) === 0) {
         chordIdx = (chordIdx + 1) % chords.length;
       }
       const ch = chords[chordIdx];
 
-      // KICK (beats 0, 4)
-      if (beat === 0 || beat === 4) {
-        if (Math.random() < (cfg.kick || 0.5) * lerp(0.2, 1.0, y)) {
-          S.kick.volume.value = lerp(-20, -6, y);
+      // ─── KICK: only hum+play corner ───
+      // Fades out as you move toward sleep or glow
+      if ((beat === 0 || beat === 4) && wSP > 0.15) {
+        if (Math.random() < wSP * 0.9) {
+          S.kick.volume.value = lerp(-30, -6, wSP);
           S.kick.start(time);
         }
       }
 
-      // HAT (even 8ths)
-      if (beat % 2 === 0 && Math.random() < (cfg.hat || 0.4) * lerp(0.1, 1.0, y)) {
-        S.hat.volume.value = lerp(-24, -10, y);
-        S.hat.start(time);
-      }
-
-      // RIM (offbeats)
-      if ((beat === 3 || beat === 7) && Math.random() < 0.3 * y) {
-        S.rim.volume.value = lerp(-20, -8, y);
-        S.rim.start(time);
-      }
-
-      // MELODY
-      const melD = cfg.melDensity || 0.5;
-      if (Math.random() < melD * lerp(0.3, 1.0, y)) {
-        const scale = cfg.scale || [0,2,4,7,9];
-        const lo = cfg.melLow || 60, hi = cfg.melHigh || 84;
-        const pool = [];
-        for (let m = lo; m <= hi; m++) {
-          if (scale.includes(m % 12)) pool.push(m);
-        }
-        if (pool.length) {
-          const midi = pool[Math.floor(Math.random() * pool.length)];
-          S.melody.volume.value = lerp(-16, -4, y * (1 - x * 0.3));
-          // Sampler.triggerAttackRelease takes note name
-          S.melody.triggerAttackRelease(midiToName(midi), '4n', time);
+      // ─── HAT: hum+play, slightly into glow+play ───
+      if (beat % 2 === 0 && (wSP + wFP * 0.3) > 0.15) {
+        const hatChance = wSP * 0.7 + wFP * 0.2;
+        if (Math.random() < hatChance) {
+          S.hat.volume.value = lerp(-28, -10, hatChance);
+          S.hat.start(time);
         }
       }
 
-      // BELL (glow side)
-      if (x > 0.4 && Math.random() < (cfg.bellDensity || 0.3) * x) {
-        S.bell.volume.value = lerp(-20, -8, x);
-        S.bell.start(time);
+      // ─── RIM: glow+play corner only ───
+      if ((beat === 2 || beat === 6) && wFP > 0.15) {
+        if (Math.random() < wFP * 0.6) {
+          S.rim.volume.value = lerp(-24, -8, wFP);
+          S.rim.start(time);
+        }
       }
 
-      // BASS (beat 0)
-      if (beat === 0) {
-        S.bass.volume.value = lerp(-18, -6, lerp(0.5, 1, 1 - x));
+      // ─── MELODY: hum side (both play and sleep) ───
+      // In hum+play: frequent, wide register, bright
+      // In hum+sleep: rare, narrow register, quiet
+      const melWeight = wSP + wSS * 0.4; // melody lives on the hum side
+      if (melWeight > 0.1) {
+        const density = wSP > wSS
+          ? lerp(0.2, 0.7, wSP)   // play: frequent
+          : lerp(0.05, 0.2, wSS); // sleep: sparse
+
+        if (Math.random() < density) {
+          const scale = cfg.scale || [0,2,4,7,9];
+          // Register shifts: play=wide, sleep=narrow+low
+          const lo = wSP > wSS ? (cfg.melLow || 60) : (cfg.melLow || 60) + 7;
+          const hi = wSP > wSS ? (cfg.melHigh || 84) : Math.min((cfg.melLow || 60) + 12, cfg.melHigh || 72);
+          const pool = [];
+          for (let m = lo; m <= hi; m++) {
+            if (scale.includes(m % 12)) pool.push(m);
+          }
+          if (pool.length) {
+            const midi = pool[Math.floor(Math.random() * pool.length)];
+            S.melody.volume.value = lerp(-22, -6, melWeight);
+            const dur = wSP > wSS ? '8n' : '2n'; // short in play, long in sleep
+            S.melody.triggerAttackRelease(midiToName(midi), dur, time);
+          }
+        }
+      }
+
+      // ─── BELL: glow side (both play and sleep) ───
+      // In glow+play: frequent sparkles
+      // In glow+sleep: rare, distant
+      const bellWeight = wFP + wFS * 0.2;
+      if (bellWeight > 0.1 && (beat === 0 || beat === 2 || beat === 4 || beat === 6)) {
+        const bellDensity = wFP > wFS
+          ? lerp(0.15, 0.5, wFP)  // play: sparkly
+          : lerp(0.02, 0.1, wFS); // sleep: occasional
+
+        if (Math.random() < bellDensity) {
+          S.bell.volume.value = lerp(-26, -8, bellWeight);
+          S.bell.start(time);
+        }
+      }
+
+      // ─── BASS: play side (both hum and glow) ───
+      // Disappears in sleep
+      if (beat === 0 && y > 0.25) {
+        const bassWeight = y * 0.8;
+        S.bass.volume.value = lerp(-24, -8, bassWeight);
         S.bass.triggerAttackRelease(midiToName(ch.bass), '2n', time);
       }
 
@@ -188,7 +219,6 @@
     return true;
   }
 
-  // ─── PUBLIC API ───
   window._samplerEngine = {
     start: async function() {
       const p = new URLSearchParams(window.location.search).get('world');
@@ -201,17 +231,36 @@
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
 
-      Tone.getTransport().bpm.value = lerp(world.tempo.sleep, world.tempo.play, y) * lerp(1.0, world.tempo.glowMult, x);
-      sReverb.wet.value = Math.min(lerp(0.1, 0.6, x) + lerp(0.2, 0, y), 0.8);
-      sDelay.wet.value = lerp(0.03, 0.3, x);
-      sDelay.feedback.value = lerp(world.fx.fbMin, world.fx.fbMax, x);
-      sFilter.frequency.value = lerp(world.fx.filtMin, world.fx.filtMax, y) * lerp(1.0, 0.75, x);
-      sGain.gain.value = world.mix.master;
+      // Corner weights
+      const wSP = (1 - x) * y;
+      const wSS = (1 - x) * (1 - y);
+      const wFP = x * y;
+      const wFS = x * (1 - y);
 
-      const c = corner(x, y);
-      const padLvl = world.corners[c].pad || 0.5;
-      S.pads.forEach(p => { p.volume.value = lerp(-30, -8, padLvl * (1 - y * 0.3)); });
-      S.atmo.volume.value = lerp(-40, -14, (world.corners[c].noise || 0.3) * x);
+      // Tempo: fast in play, slow in sleep, slightly slower in glow
+      Tone.getTransport().bpm.value = lerp(world.tempo.sleep, world.tempo.play, y) * lerp(1.0, world.tempo.glowMult, x);
+
+      // Reverb: dry in hum+play, wet in glow+sleep
+      const revWet = wSP * 0.1 + wSS * 0.35 + wFP * 0.3 + wFS * 0.65;
+      sReverb.wet.value = revWet;
+
+      // Delay: off in hum, present in glow
+      sDelay.wet.value = lerp(0.0, 0.25, x);
+      sDelay.feedback.value = lerp(world.fx.fbMin, world.fx.fbMax, x);
+
+      // Filter: open in play, dark in sleep
+      const filt = wSP * 8000 + wSS * 1200 + wFP * 6000 + wFS * 800;
+      sFilter.frequency.value = filt;
+
+      // Pad volume: quiet in hum+play, LOUD in glow+sleep
+      const padVol = wSP * 0.05 + wSS * 0.4 + wFP * 0.3 + wFS * 0.9;
+      S.pads.forEach(p => { p.volume.value = lerp(-40, -6, padVol); });
+
+      // Atmosphere: silent in hum+play, dominant in glow+sleep
+      const atmoVol = wSP * 0.0 + wSS * 0.15 + wFP * 0.1 + wFS * 0.8;
+      S.atmo.volume.value = lerp(-50, -8, atmoVol);
+
+      sGain.gain.value = world.mix.master;
     },
 
     isActive: function() { return sStarted; }
