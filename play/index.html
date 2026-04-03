@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>lil.audio</title>
   <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.min.js"></script>
+  <script src="sampler-engine.js"></script>
   <style>
     @font-face {
       font-family: 'ComicSans';
@@ -226,6 +227,11 @@
 
     <div id="ball"></div>
     <button id="mute-btn">mute</button>
+    <div id="world-selector" style="position:absolute; top:10px; right:10px; font-size:12px; opacity:0.6;">
+      <a href="?world=nature" style="color:inherit; margin:0 5px;">forest</a>
+      <a href="?world=vocal" style="color:inherit; margin:0 5px;">voices</a>
+      <a href="?" style="color:inherit; margin:0 5px;">synth</a>
+    </div>
     <div id="version">lil.audio v0.1</div>
   </div>
 

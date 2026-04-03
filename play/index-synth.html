@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>lil.audio</title>
+  <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.min.js"></script>
+  <style>
+    @font-face {
+      font-family: 'ComicSans';
+      src: url('../fonts/comic-sans-bold.woff2') format('woff2');
+      font-weight: bold;
+      font-style: normal;
+      font-display: swap;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      min-height: 100vh;
+      min-height: 100dvh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      overflow: hidden;
+      touch-action: none;
+      transition: background-color 1.5s ease;
+      background-color: #1a1a2e;
+    }
+
+    /* ─── Password ─── */
+    #gate {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 20px;
+    }
+    #gate .logo { font-size: 60px; font-weight: bold; color: #fff; }
+    #gate input {
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: 20px;
+      padding: 12px 24px;
+      border: 3px solid rgba(255,255,255,0.3);
+      border-radius: 50px;
+      text-align: center;
+      outline: none;
+      background: transparent;
+      color: #fff;
+      letter-spacing: 0.1em;
+    }
+    #gate input::placeholder { color: rgba(255,255,255,0.2); }
+    #gate .hint { font-size: 14px; opacity: 0.2; color: #fff; }
+    #gate.wrong input { border-color: #FF3B30; animation: shake 0.4s ease; }
+    @keyframes shake {
+      0%,100% { transform: translateX(0); }
+      25% { transform: translateX(-8px); }
+      75% { transform: translateX(8px); }
+    }
+
+    /* ─── Main App ─── */
+    #app {
+      display: none;
+      width: 100%;
+      height: 100vh;
+      height: 100dvh;
+      position: relative;
+    }
+
+    /* ─── XY Field ─── */
+    #field {
+      position: absolute;
+      inset: 0;
+      cursor: crosshair;
+    }
+
+    /* Corner labels */
+    .corner-label {
+      position: absolute;
+      font-size: clamp(11px, 2.5vw, 16px);
+      font-weight: bold;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      opacity: 0.15;
+      transition: opacity 0.8s, color 1.5s;
+      pointer-events: none;
+    }
+    .corner-label.top { top: 4vh; left: 50%; transform: translateX(-50%); }
+    .corner-label.bottom { bottom: 4vh; left: 50%; transform: translateX(-50%); }
+    .corner-label.left { left: 4vw; top: 50%; transform: translateY(-50%); }
+    .corner-label.right { right: 4vw; top: 50%; transform: translateY(-50%); }
+
+    /* The ball/cursor */
+    #ball {
+      position: absolute;
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      box-shadow: 0 0 30px rgba(255,255,255,0.15);
+      transition: background-color 0.8s ease, box-shadow 0.8s ease;
+      z-index: 10;
+      animation: breathe 3s ease-in-out infinite;
+    }
+
+    @keyframes breathe {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+      50% { transform: translate(-50%, -50%) scale(1.12); opacity: 0.85; }
+    }
+
+    /* Glow trail */
+    #ball::after {
+      content: '';
+      position: absolute;
+      inset: -15px;
+      border-radius: 50%;
+      background: radial-gradient(circle, rgba(255,255,255,0.06) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Logo */
+    #app-logo {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(60px, 15vw, 120px);
+      font-weight: bold;
+      opacity: 0.06;
+      pointer-events: none;
+      z-index: 1;
+      transition: color 1.5s;
+    }
+
+    /* Start prompt */
+    #start-prompt {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: clamp(16px, 3.5vw, 24px);
+      font-weight: bold;
+      opacity: 0.5;
+      animation: pulse 2s ease-in-out infinite;
+      cursor: pointer;
+      z-index: 20;
+      transition: color 1.5s;
+    }
+    @keyframes pulse {
+      0%,100% { opacity: 0.5; }
+      50% { opacity: 0.15; }
+    }
+
+    /* Grid lines */
+    #grid {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+    #grid .line {
+      position: absolute;
+      background: currentColor;
+      opacity: 0.04;
+    }
+    #grid .h { left: 0; right: 0; height: 1px; top: 50%; }
+    #grid .v { top: 0; bottom: 0; width: 1px; left: 50%; }
+
+    /* Mute button */
+    #mute-btn {
+      position: absolute;
+      bottom: 4vh;
+      right: 4vw;
+      border: none;
+      background: none;
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: clamp(12px, 2.5vw, 16px);
+      font-weight: bold;
+      letter-spacing: 0.1em;
+      cursor: pointer;
+      z-index: 20;
+      display: none;
+      opacity: 0.25;
+      transition: opacity 0.3s, color 1.5s;
+    }
+    #mute-btn:hover { opacity: 0.5; }
+
+    /* Version */
+    #version {
+      position: absolute;
+      bottom: 2vh;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 10px;
+      opacity: 0.1;
+      pointer-events: none;
+      transition: color 1.5s;
+    }
+  </style>
+</head>
+<body>
+
+  <div id="gate">
+    <div class="logo">lil</div>
+    <input id="pw" type="password" placeholder="•••••••" autofocus>
+    <div class="hint">v0.1</div>
+  </div>
+
+  <div id="app">
+    <div id="grid">
+      <div class="line h"></div>
+      <div class="line v"></div>
+    </div>
+
+    <div id="app-logo">lil</div>
+
+    <div class="corner-label top" id="lbl-top">play</div>
+    <div class="corner-label bottom" id="lbl-bottom">sleep</div>
+    <div class="corner-label left" id="lbl-left">hum</div>
+    <div class="corner-label right" id="lbl-right">glow</div>
+
+    <div id="field">
+      <div id="start-prompt">tap anywhere</div>
+    </div>
+
+    <div id="ball"></div>
+    <button id="mute-btn">mute</button>
+    <div id="version">lil.audio v0.1</div>
+  </div>
+
+<script>
+// ─── PASSWORD ───
+const PASS = 'bambient';
+const pwInput = document.getElementById('pw');
+const gate = document.getElementById('gate');
+const appEl = document.getElementById('app');
+
+function tryPassword() {
+  if (pwInput.value === PASS) {
+    gate.style.display = 'none';
+    appEl.style.display = 'block';
+    initApp();
+  } else {
+    gate.classList.add('wrong');
+    pwInput.value = '';
+    setTimeout(() => gate.classList.remove('wrong'), 400);
+  }
+}
+pwInput.addEventListener('keydown', e => { if (e.key === 'Enter') tryPassword(); });
+// Also handle 'Go' button on mobile keyboards
+pwInput.addEventListener('change', tryPassword);
+
+// ─── STATE ───
+// x: 0 = hum, 1 = glow
+// y: 0 = sleep (bottom), 1 = play (top)
+let xVal = 0.5;      // current (smoothed)
+let yVal = 0.5;
+let xTarget = 0.5;   // target (where user clicked/dragged)
+let yTarget = 0.5;
+let audioStarted = false;
+let appReady = false;
+let isDragging = false;
+const GLIDE_SPEED = 0.02;
+let lastVisualUpdate = 0;
+let visualFrameId = 0;
+let audioControlTimer = 0;
+let fieldMetrics = { left: 0, top: 0, width: 1, height: 1 };
+let isPageHidden = document.hidden;
+
+const fieldEl = document.getElementById('field');
+const ballEl = document.getElementById('ball');
+const promptEl = document.getElementById('start-prompt');
+const muteBtnEl = document.getElementById('mute-btn');
+const appLogoEl = document.getElementById('app-logo');
+const versionEl = document.getElementById('version');
+const labelEls = Array.from(document.querySelectorAll('.corner-label'));
+const gridLineEls = Array.from(document.querySelectorAll('#grid .line'));
+const lblTopEl = document.getElementById('lbl-top');
+const lblBottomEl = document.getElementById('lbl-bottom');
+const lblLeftEl = document.getElementById('lbl-left');
+const lblRightEl = document.getElementById('lbl-right');
+
+function updateFieldMetrics() {
+  const rect = fieldEl.getBoundingClientRect();
+  fieldMetrics.left = rect.left;
+  fieldMetrics.top = rect.top;
+  fieldMetrics.width = Math.max(rect.width, 1);
+  fieldMetrics.height = Math.max(rect.height, 1);
+}
+
+// Smooth glide loop — throttled to ~30fps for visuals, audio updates less often
+function glideLoop(now) {
+  if (appReady) {
+    xVal += (xTarget - xVal) * GLIDE_SPEED;
+    yVal += (yTarget - yVal) * GLIDE_SPEED;
+
+    if (now - lastVisualUpdate > 33) { // ~30fps
+      updateVisuals(now);
+      lastVisualUpdate = now;
+    }
+  }
+  visualFrameId = requestAnimationFrame(glideLoop);
+}
+
+updateFieldMetrics();
+visualFrameId = requestAnimationFrame(glideLoop);
+
+// ─── COLORS ───
+function lerpColor(a, b, t) {
+  const ah = parseInt(a.replace('#',''), 16);
+  const bh = parseInt(b.replace('#',''), 16);
+  const ar = (ah >> 16) & 0xff, ag = (ah >> 8) & 0xff, ab = ah & 0xff;
+  const br = (bh >> 16) & 0xff, bg = (bh >> 8) & 0xff, bb = bh & 0xff;
+  return `rgb(${Math.round(ar+(br-ar)*t)},${Math.round(ag+(bg-ag)*t)},${Math.round(ab+(bb-ab)*t)})`;
+}
+
+// Corner colors: TL(melodic+play) TR(ambient+play) BL(melodic+sleep) BR(ambient+sleep)
+const C_TL = '#FFD60A'; // warm yellow
+const C_TR = '#4ECDC4'; // teal
+const C_BL = '#FF6B6B'; // coral
+const C_BR = '#5E5CE6'; // deep purple
+
+function bilinear(tl, tr, bl, br, x, y) {
+  // x: 0=left, 1=right. y: 0=bottom, 1=top
+  const top = lerpColor(tl, tr, x);
+  const bot = lerpColor(bl, br, x);
+  return lerpColor(bot, top, y);
+}
+
+function bilinearHex(tl, tr, bl, br, x, y) {
+  const parse = c => {
+    const h = parseInt(c.replace('#',''), 16);
+    return [(h >> 16) & 0xff, (h >> 8) & 0xff, h & 0xff];
+  };
+  const lerp3 = (a, b, t) => a.map((v, i) => Math.round(v + (b[i] - v) * t));
+  const top = lerp3(parse(tl), parse(tr), x);
+  const bot = lerp3(parse(bl), parse(br), x);
+  const c = lerp3(bot, top, y);
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+}
+
+function updateVisuals(now = performance.now()) {
+  const x = xVal, y = yVal;
+
+  // Background: deep black at sleep, bright shifting colors at play
+  const time01 = (now % 20000) / 20000;
+  const hue = ((x * 60) + (time01 * 360)) % 360;
+  const sat = lerp(70, 50, x);
+  // Lightness: 3% at sleep, up to 90% at play
+  const lit = lerp(3, 90, Math.pow(y, 1.5));
+  document.body.style.backgroundColor = `hsl(${hue}, ${sat}%, ${lit}%)`;
+
+  // Ball color
+  const ballColor = bilinearHex(C_TL, C_TR, C_BL, C_BR, x, y);
+  ballEl.style.backgroundColor = ballColor;
+  ballEl.style.boxShadow = `0 0 ${20 + (1 - y) * 40}px ${ballColor}77`;
+
+  // Position ball using cached field metrics to avoid layout work every frame.
+  ballEl.style.left = (fieldMetrics.left + x * fieldMetrics.width) + 'px';
+  ballEl.style.top = (fieldMetrics.top + (1 - y) * fieldMetrics.height) + 'px';
+
+  // Text: bright white in sleep (dark bg), dark in play (light bg)
+  const textColor = lerpColor('#ffffff', '#1a1a2e', y);
+  labelEls.forEach(el => { el.style.color = textColor; });
+  appLogoEl.style.color = textColor;
+  versionEl.style.color = textColor;
+  gridLineEls.forEach(el => { el.style.color = textColor; });
+  if (promptEl) promptEl.style.color = textColor;
+
+  // Color drift is handled by the glide loop
+
+  // Labels: brighter in sleep, dimmer in play. Highlight the nearest axis label.
+  const baseLabelOpacity = lerp(0.3, 0.08, y);
+  labelEls.forEach(el => { el.style.opacity = baseLabelOpacity; });
+  lblTopEl.style.opacity = baseLabelOpacity + y * 0.3;
+  lblBottomEl.style.opacity = baseLabelOpacity + (1 - y) * 0.3;
+  lblLeftEl.style.opacity = baseLabelOpacity + (1 - x) * 0.3;
+  lblRightEl.style.opacity = baseLabelOpacity + x * 0.3;
+  // Mute button color
+  if (muteBtnEl) muteBtnEl.style.color = textColor;
+}
+
+// ─── INTERACTION ───
+function initApp() {
+  appReady = true;
+  updateVisuals();
+
+  updateFieldMetrics();
+
+  function getXY(e) {
+    const cx = e.touches ? e.touches[0].clientX : e.clientX;
+    const cy = e.touches ? e.touches[0].clientY : e.clientY;
+    return {
+      x: Math.max(0, Math.min(1, (cx - fieldMetrics.left) / fieldMetrics.width)),
+      y: Math.max(0, Math.min(1, 1 - (cy - fieldMetrics.top) / fieldMetrics.height))
+    };
+  }
+
+  function onStart(e) {
+    e.preventDefault();
+    if (!audioStarted) {
+      audioStarted = true; // prevent double-init
+      promptEl.style.display = 'none';
+      muteBtnEl.style.display = 'block';
+
+      // Try sync first (Safari), then async fallback (Chrome)
+      const ctx = Tone.getContext().rawContext;
+      if (ctx.state === 'suspended') ctx.resume();
+      Tone.start().then(() => {
+        if (Tone.getContext().rawContext.state === 'suspended') {
+          Tone.getContext().rawContext.resume();
+        }
+        startAudio();
+        startAudioControlLoop();
+      });
+    }
+    isDragging = true;
+    onMove(e);
+  }
+
+  function onMove(e) {
+    if (!isDragging) return;
+    e.preventDefault();
+    const pos = getXY(e);
+    xTarget = pos.x;
+    yTarget = pos.y;
+    // glideLoop handles the smooth transition
+  }
+
+  function onEnd() { isDragging = false; }
+
+  fieldEl.addEventListener('mousedown', onStart);
+  fieldEl.addEventListener('touchstart', onStart, { passive: false });
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('touchmove', onMove, { passive: false });
+  window.addEventListener('mouseup', onEnd);
+  window.addEventListener('touchend', onEnd);
+  window.addEventListener('resize', updateFieldMetrics);
+  window.addEventListener('orientationchange', updateFieldMetrics);
+}
+
+// ═══════════════════════════════════════
+// AUDIO ENGINE — ONE UNIFIED SEQUENCER
+// ═══════════════════════════════════════
+let musicBoxSynth, vocalSynth, bellSynth, padSynth, bassSynth;
+let noiseSynth, kickSynth, hihatSynth, rimSynth;
+let mainLoop; // single master loop runs everything
+let masterReverb, masterDelay, masterFilter, masterComp, masterGain;
+let noiseFilter;
+const transport = Tone.getTransport();
+
+function setParamValue(param, nextValue, epsilon = 0.001) {
+  if (Math.abs(param.value - nextValue) > epsilon) {
+    param.value = nextValue;
+  }
+}
+
+function startAudioControlLoop() {
+  if (audioControlTimer) return;
+
+  const tick = () => {
+    if (!audioStarted) {
+      audioControlTimer = 0;
+      return;
+    }
+
+    if (!document.hidden) {
+      updateAudio();
+    }
+
+    audioControlTimer = window.setTimeout(tick, 250);
+  };
+
+  audioControlTimer = window.setTimeout(tick, 250);
+}
+
+function stopAudioControlLoop() {
+  if (audioControlTimer) {
+    window.clearTimeout(audioControlTimer);
+    audioControlTimer = 0;
+  }
+}
+
+// ─── SHARED MUSICAL STATE ───
+let chordIndex = 0;
+let barCount = 0;
+let currentScale = [0, 2, 4, 7, 9]; // shared scale for melody+bass
+let currentPadNotes = [60, 64, 67];  // current pad chord
+let currentBassNote = 48;            // current bass root
+
+// ─── CHORD PROGRESSIONS (all as { pad, bass, scale }) ───
+// ─── Ville's test tuning ───
+const SING_PLAY = [
+  { pad: [60, 64, 67], bass: 48, scale: [0, 2, 4, 7, 9] },     // C maj penta
+  { pad: [65, 69, 72], bass: 53, scale: [0, 2, 4, 7, 9] },     // F maj penta
+  { pad: [67, 71, 74], bass: 55, scale: [0, 2, 4, 7, 9] },     // G maj penta
+  { pad: [57, 60, 64], bass: 45, scale: [0, 2, 4, 7, 9] },     // Am penta
+];
+const SING_SLEEP = [
+  { pad: [57, 60, 64, 67], bass: 45, scale: [0, 2, 4, 6, 7, 9, 11] },  // Am7 lydian
+  { pad: [60, 64, 67, 71], bass: 48, scale: [0, 2, 4, 6, 7, 9, 11] },  // Cmaj7 lydian
+  { pad: [65, 69, 72, 76], bass: 53, scale: [0, 2, 4, 6, 7, 9, 11] },  // Fmaj7 lydian
+  { pad: [62, 66, 69, 73], bass: 50, scale: [0, 2, 4, 6, 7, 9, 11] },  // Dmaj7 lydian
+];
+const FLOAT_PLAY = [
+  { pad: [60, 64, 67, 71], bass: 48, scale: [0, 2, 4, 6, 7, 9, 11] }, // Cmaj7 lydian
+  { pad: [62, 66, 69, 73], bass: 50, scale: [0, 2, 4, 6, 7, 9, 11] }, // Dmaj7
+  { pad: [64, 68, 71, 76], bass: 52, scale: [0, 2, 4, 6, 7, 9, 11] }, // Emaj7
+  { pad: [67, 71, 74, 78], bass: 55, scale: [0, 2, 4, 6, 7, 9, 11] }, // Gmaj7
+];
+const FLOAT_SLEEP = [
+  { pad: [48, 55, 60, 67], bass: 36, scale: [0, 2, 4, 7, 9] },  // open C penta
+  { pad: [50, 57, 62, 69], bass: 38, scale: [0, 2, 4, 7, 9] },  // open D
+  { pad: [53, 60, 65, 72], bass: 41, scale: [0, 2, 4, 7, 9] },  // open F
+  { pad: [45, 52, 57, 64], bass: 33, scale: [0, 2, 4, 7, 9] },  // open A
+];
+
+function midiToFreq(m) { return 440 * Math.pow(2, (m - 69) / 12); }
+function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function startAudio() {
+  // ─── FX Chain (minimal for mobile) ───
+  masterReverb = new Tone.Reverb({ decay: 3, wet: 0.25 }).toDestination();
+  masterDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.09, wet: 0.05 }).connect(masterReverb);
+  masterFilter = new Tone.Filter({ frequency: 5000, type: 'lowpass', rolloff: -12 }).connect(masterDelay);
+  masterGain = new Tone.Gain(0.6).connect(masterFilter);
+
+  // ─── SYNTHS (all mono — minimal node count) ───
+  musicBoxSynth = new Tone.Synth({
+    oscillator: { type: 'triangle8' },
+    envelope: { attack: 0.002, decay: 0.35, sustain: 0, release: 0.5 },
+    volume: -8,
+  }).connect(masterGain);
+
+  vocalSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.15, decay: 1.0, sustain: 0.15, release: 1.0 },
+    volume: -12,
+  }).connect(masterGain);
+
+  bellSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 1.0, sustain: 0, release: 1.0 },
+    volume: -16,
+  }).connect(masterGain);
+
+  // Pad: 3 simple oscillators instead of PolySynth
+  const padGain = new Tone.Gain(0.3).connect(masterGain);
+  const padOsc1 = new Tone.Synth({ oscillator: {type:'sine'}, envelope: {attack:2,decay:1,sustain:0.5,release:2}, volume:-20 }).connect(padGain);
+  const padOsc2 = new Tone.Synth({ oscillator: {type:'sine'}, envelope: {attack:2,decay:1,sustain:0.5,release:2}, volume:-20 }).connect(padGain);
+  const padOsc3 = new Tone.Synth({ oscillator: {type:'sine'}, envelope: {attack:2,decay:1,sustain:0.5,release:2}, volume:-22 }).connect(padGain);
+  padSynth = { voices: [padOsc1, padOsc2, padOsc3] };
+
+  bassSynth = new Tone.Synth({
+    oscillator: { type: 'triangle' },
+    envelope: { attack: 0.05, decay: 1.0, sustain: 0.2, release: 1.0 },
+    volume: -16,
+  }).connect(masterGain);
+
+  // Kick: simple synth instead of MembraneSynth (lighter)
+  kickSynth = new Tone.Synth({
+    oscillator: { type: 'sine' },
+    envelope: { attack: 0.001, decay: 0.15, sustain: 0, release: 0.1 },
+    volume: -18,
+  }).connect(masterGain);
+
+  // Hihat: filtered noise burst (much lighter than MetalSynth)
+  const hhFilter = new Tone.Filter({ frequency: 8000, type: 'highpass' }).connect(masterGain);
+  hihatSynth = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.04, sustain: 0, release: 0.01 },
+    volume: -28,
+  }).connect(hhFilter);
+
+  // Rim: reuse a simple click
+  rimSynth = new Tone.NoiseSynth({
+    noise: { type: 'white' },
+    envelope: { attack: 0.001, decay: 0.03, sustain: 0, release: 0.01 },
+    volume: -26,
+  }).connect(new Tone.Filter({ frequency: 3000, type: 'bandpass' }).connect(masterGain));
+
+  noiseFilter = new Tone.Filter({ frequency: 600, type: 'lowpass' }).connect(masterGain);
+  noiseSynth = new Tone.Noise({ type: 'pink', volume: -60 }).connect(noiseFilter);
+  noiseSynth.start();
+
+  // ─── CHOOSE CHORD SET BASED ON POSITION ───
+  function getProgression() {
+    const x = xVal, y = yVal;
+    if (x < 0.5 && y >= 0.5) return SING_PLAY;
+    if (x < 0.5 && y < 0.5) return SING_SLEEP;
+    if (x >= 0.5 && y >= 0.5) return FLOAT_PLAY;
+    return FLOAT_SLEEP;
+  }
+
+  function advanceChord(time) {
+    const prog = getProgression();
+    chordIndex = (chordIndex + 1) % prog.length;
+    const ch = prog[chordIndex];
+
+    // Update shared state — EVERYTHING reads from these
+    currentScale = ch.scale;
+    currentPadNotes = ch.pad;
+    currentBassNote = ch.bass;
+
+    // Play pad — 3 fixed voices, no accumulation possible
+    const x = xVal, y = yVal;
+    const padVol = lerp(0.15, 0.4, x * 0.5 + (1 - y) * 0.5);
+    const padNotes = ch.pad.map(midiToFreq);
+    padSynth.voices.forEach((v, i) => {
+      if (padNotes[i]) v.triggerAttackRelease(padNotes[i], '2n', time + 0.05, padVol);
+    });
+
+    // Play bass — same root, same time
+    bassSynth.triggerRelease(time);
+    const bassVol = lerp(0.2, 0.5, lerp(1, 0.3, y));
+    bassSynth.triggerAttackRelease(midiToFreq(ch.bass), '1n', time, bassVol);
+  }
+
+  // ─── SINGLE MASTER LOOP — 16th note resolution ───
+  let step = 0; // counts 8th notes
+  let lastMelNote = -1;
+  const STEPS_PER_BAR = 8; // 8 eighths = 1 bar of 4/4
+  const BARS_PER_CHORD = 3;
+
+  mainLoop = new Tone.Loop(time => {
+    const x = xVal, y = yVal;
+    const beatInBar = step % STEPS_PER_BAR;       // 0-7
+    const barInChord = Math.floor((step % (STEPS_PER_BAR * BARS_PER_CHORD)) / STEPS_PER_BAR);
+
+    // ═══ CHORD CHANGE on beat 0 of every 2 bars ═══
+    if (beatInBar === 0 && barInChord === 0) {
+      advanceChord(time);
+    }
+
+    // ═══ Crossfade amounts ═══
+    const singAmt = Math.max(0, 1 - x * 2);
+    const floatAmt = Math.max(0, x * 2 - 1);
+    const energy = Math.max(0, (y - 0.15) / 0.85); // 0=sleep, 1=play
+
+    // ═══ KICK ═══
+    if (energy > 0.1) {
+      const kickVol = lerp(0.15, 0.5, energy) * lerp(1.0, 0.4, x);
+      if (beatInBar === 0 || (beatInBar === 4 && energy > 0.3)) {
+        kickSynth.triggerAttackRelease(lerp(52, 62, y), '16n', time, kickVol);
+      }
+    }
+
+    // ═══ HIHAT (every 8th, accent on beats) ═══
+    if (energy > 0.15 && Math.random() < energy * 0.75) {
+      const accent = beatInBar % 2 === 0 ? 1.0 : 0.5;
+      hihatSynth.triggerAttackRelease('32n', time, lerp(0.04, 0.15, energy) * accent * lerp(1, 0.3, x));
+    }
+
+    // ═══ RIM ghost notes ═══
+    if (energy > 0.4 && (beatInBar === 3 || beatInBar === 5)) {
+      if (Math.random() < energy * 0.35 * lerp(1, 0.2, x)) {
+        rimSynth.triggerAttackRelease('32n', time, lerp(0.08, 0.2, energy));
+      }
+    }
+
+    // ═══ BASS re-trigger ═══
+    if (energy > 0.4 && singAmt > 0.3 && beatInBar === 4) {
+      bassSynth.triggerAttackRelease(midiToFreq(currentBassNote), '4n', time, 0.2 * energy);
+    }
+
+    // ═══ MELODY (every step is already an 8th note) ═══
+    {
+      const eighth = beatInBar; // 0-7
+
+      // ── Sing+Play: music box, chord-locked, rhythmic ──
+      if (singAmt > 0 && y > 0.3) {
+        const playAmt = (y - 0.3) / 0.7;
+        // Rhythmic probability grid for melody
+        let prob;
+        if (eighth === 0) prob = 0.95;
+        else if (eighth === 4) prob = 0.8;
+        else if (eighth === 2 || eighth === 6) prob = 0.55;
+        else prob = 0.15 * playAmt;
+        prob *= singAmt * lerp(0.5, 1.0, playAmt);
+
+        if (Math.random() < prob) {
+          // Pick from SHARED scale, rooted to current chord
+          const root = currentPadNotes[0]; // chord root
+          const scaleNote = pick(currentScale);
+          const octave = Math.round(lerp(60, 72, playAmt));
+          let note = octave + scaleNote;
+
+          // Stepwise: prefer close to last note
+          if (lastMelNote > 0 && Math.abs(note - lastMelNote) > 5 && Math.random() > 0.35) {
+            const options = currentScale.map(s => octave + s)
+              .sort((a, b) => Math.abs(a - lastMelNote) - Math.abs(b - lastMelNote));
+            note = options[0];
+          }
+
+          const vel = lerp(0.25, 0.5, playAmt) * singAmt;
+          const dur = eighth === 0 ? '8n' : '16n';
+          musicBoxSynth.triggerAttackRelease(midiToFreq(note), dur, time, vel);
+          lastMelNote = note;
+        }
+      }
+
+      // ── Sing+Sleep: vocal, sparse ──
+      if (singAmt > 0 && y < 0.65) {
+        const sleepAmt = Math.max(0, (0.65 - y) / 0.65);
+        const prob = (eighth === 0 ? 0.5 : (eighth === 4 ? 0.25 : 0.05)) * sleepAmt * singAmt;
+
+        if (Math.random() < prob) {
+          const root = currentPadNotes[0];
+          const note = lerp(55, 64, 1 - sleepAmt) + pick(currentScale);
+          const vel = lerp(0.1, 0.3, sleepAmt) * singAmt;
+          vocalSynth.triggerAttackRelease(midiToFreq(Math.round(note)), lerp(0.8, 2.5, sleepAmt), time, vel);
+          lastMelNote = Math.round(note);
+        }
+      }
+
+      // ── Float: shimmer bells, uses same scale ──
+      if (floatAmt > 0) {
+        const prob = lerp(0.05, 0.35, floatAmt) * lerp(0.5, 1.0, 1 - y * 0.3);
+        if (Math.random() < prob) {
+          const note = lerp(78, 90, x) + pick(currentScale);
+          const vel = lerp(0.06, 0.2, floatAmt);
+          bellSynth.triggerAttackRelease(midiToFreq(Math.round(note)), 0.02, time, vel);
+        }
+      }
+    }
+
+    // ═══ SUB PULSE (sleep side, on half notes) ═══
+    if (y < 0.4 && beatInBar === 0 && Math.random() < (0.4 - y)) {
+      bassSynth.triggerAttackRelease(midiToFreq(currentBassNote), '2n', time, lerp(0.1, 0.3, 1 - y));
+    }
+
+    step++;
+  }, '8n');
+
+  // ─── START ───
+  transport.bpm.value = 100;
+  mainLoop.start(0);
+  if (transport.state !== 'started') {
+    transport.start();
+  }
+  updateAudio();
+}
+
+function updateAudio() {
+  if (!audioStarted || isMuted) return;
+  const x = xVal, y = yVal;
+
+  // Direct .value sets — no rampTo to prevent automation timeline accumulation
+  setParamValue(transport.bpm, lerp(55, 154, y) * lerp(1.0, 0.85, x), 0.1);
+
+  setParamValue(masterReverb.wet, Math.min(lerp(0.1, 0.45, x) + lerp(0.15, 0, y), 0.55), 0.005);
+  setParamValue(masterDelay.wet, lerp(0.03, 0.25, x), 0.005);
+  setParamValue(masterDelay.feedback, lerp(0.09, 0.63, x), 0.005);
+  setParamValue(masterFilter.frequency, lerp(700, 9000, y) * lerp(1.0, 0.75, x), 1);
+
+  setParamValue(musicBoxSynth.volume, lerp(-6, -24, x) + lerp(-6, 4, y), 0.25);
+  setParamValue(vocalSynth.volume, lerp(-8, -28, x) + lerp(3, -5, y), 0.25);
+  setParamValue(bellSynth.volume, lerp(-26, -10, x), 0.25);
+  const pv = lerp(-24, -14, lerp(0.1, 0.4, x * 0.5 + (1 - y) * 0.5));
+  padSynth.voices.forEach(v => { setParamValue(v.volume, pv, 0.25); });
+  setParamValue(bassSynth.volume, lerp(-12, -20, y) + lerp(2, -2, 1 - x), 0.25);
+  setParamValue(kickSynth.volume, lerp(-14, -26, x) + lerp(-10, 2, y), 0.25);
+  setParamValue(hihatSynth.volume, lerp(-24, -36, x) + lerp(-8, 2, y), 0.25);
+  setParamValue(rimSynth.volume, lerp(-22, -34, x) + lerp(-6, 2, y), 0.25);
+  setParamValue(noiseSynth.volume, -60 + (1 - y) * 6 + x * 6 + ((1 - y) * x) * 6, 0.25);
+  setParamValue(noiseFilter.frequency, lerp(400, 900, x), 1);
+}
+
+// ─── MUTE TOGGLE ───
+let isMuted = false;
+muteBtnEl.addEventListener('click', (e) => {
+  e.stopPropagation();
+  isMuted = !isMuted;
+  if (isMuted) {
+    masterGain.gain.value = 0;
+    muteBtnEl.textContent = 'unmute';
+  } else {
+    masterGain.gain.value = 0.6;
+    muteBtnEl.textContent = 'mute';
+  }
+});
+
+document.addEventListener('visibilitychange', () => {
+  isPageHidden = document.hidden;
+
+  if (isPageHidden) {
+    if (visualFrameId) {
+      cancelAnimationFrame(visualFrameId);
+      visualFrameId = 0;
+    }
+    stopAudioControlLoop();
+    if (audioStarted && transport.state === 'started') {
+      transport.pause();
+    }
+    return;
+  }
+
+  updateFieldMetrics();
+  if (!visualFrameId) {
+    lastVisualUpdate = 0;
+    visualFrameId = requestAnimationFrame(glideLoop);
+  }
+  if (audioStarted) {
+    if (transport.state !== 'started') {
+      transport.start();
+    }
+    startAudioControlLoop();
+    updateAudio();
+  }
+});
+
+window.addEventListener('pagehide', stopAudioControlLoop);
+
+</script>
+</body>
+</html>
