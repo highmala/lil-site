@@ -11,7 +11,13 @@
   "barsPerChord": 2,
   "corners": {
     "sp": {
-      "scale": [0, 2, 4, 7, 9],
+      "scale": [
+        0,
+        2,
+        4,
+        7,
+        9
+      ],
       "melDensity": 0.8,
       "melLow": 60,
       "melHigh": 84,
@@ -20,18 +26,38 @@
       "swing": 0.2
     },
     "ss": {
-      "scale": [0, 3, 5, 7, 10],
+      "scale": [
+        0,
+        3,
+        5,
+        7,
+        10
+      ],
       "melDensity": 0.5,
       "melLow": 67,
       "melHigh": 72
     },
     "fp": {
-      "scale": [0, 2, 4, 6, 7, 9, 11],
+      "scale": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        11
+      ],
       "bellDensity": 0.6,
       "bellReg": 88
     },
     "fs": {
-      "scale": [0, 2, 4, 7, 9],
+      "scale": [
+        0,
+        2,
+        4,
+        7,
+        9
+      ],
       "pad": 0.9,
       "noise": 0.2
     }
@@ -63,11 +89,20 @@
   "samples": {
     "melody": "vocal/samples/melody-{note}.wav",
     "bell": "vocal/samples/bell-high.wav",
-    "pad": ["vocal/samples/pad-warm.wav", "vocal/samples/pad-bright.wav"],
+    "pad": [
+      "vocal/samples/pad-warm.wav",
+      "vocal/samples/pad-bright.wav"
+    ],
     "bass": "vocal/samples/bass-{note}.wav",
     "kick": "vocal/samples/kick.wav",
     "hat": "vocal/samples/hat.wav",
     "rim": "vocal/samples/rim.wav",
-    "atmosphere": "vocal/samples/atmosphere.wav"
+    "atmosphere": "vocal/samples/atmosphere.wav",
+    "leads": {
+      "sp": "vocal/samples/lead-sp-{note}.wav",
+      "ss": "vocal/samples/lead-ss-{note}.wav",
+      "fp": "vocal/samples/lead-fp-{note}.wav",
+      "fs": "vocal/samples/lead-fs-{note}.wav"
+    }
   }
 }

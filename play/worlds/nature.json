@@ -11,7 +11,13 @@
   "barsPerChord": 4,
   "corners": {
     "sp": {
-      "scale": [0, 2, 4, 7, 9],
+      "scale": [
+        0,
+        2,
+        4,
+        7,
+        9
+      ],
       "melDensity": 0.6,
       "melLow": 60,
       "melHigh": 84,
@@ -20,18 +26,38 @@
       "swing": 0.1
     },
     "ss": {
-      "scale": [0, 3, 5, 7, 10],
+      "scale": [
+        0,
+        3,
+        5,
+        7,
+        10
+      ],
       "melDensity": 0.3,
       "melLow": 72,
       "melHigh": 78
     },
     "fp": {
-      "scale": [0, 2, 4, 6, 7, 9, 11],
+      "scale": [
+        0,
+        2,
+        4,
+        6,
+        7,
+        9,
+        11
+      ],
       "bellDensity": 0.4,
       "bellReg": 84
     },
     "fs": {
-      "scale": [0, 2, 4, 7, 9],
+      "scale": [
+        0,
+        2,
+        4,
+        7,
+        9
+      ],
       "pad": 0.8,
       "noise": 0.6
     }
@@ -63,11 +89,20 @@
   "samples": {
     "melody": "nature/samples/melody-{note}.wav",
     "bell": "nature/samples/bell-high.wav",
-    "pad": ["nature/samples/pad-warm.wav", "nature/samples/pad-bright.wav"],
+    "pad": [
+      "nature/samples/pad-warm.wav",
+      "nature/samples/pad-bright.wav"
+    ],
     "bass": "nature/samples/bass-{note}.wav",
     "kick": "nature/samples/kick.wav",
     "hat": "nature/samples/hat.wav",
     "rim": "nature/samples/rim.wav",
-    "atmosphere": "nature/samples/atmosphere.wav"
+    "atmosphere": "nature/samples/atmosphere.wav",
+    "leads": {
+      "sp": "nature/samples/lead-sp-{note}.wav",
+      "ss": "nature/samples/lead-ss-{note}.wav",
+      "fp": "nature/samples/lead-fp-{note}.wav",
+      "fs": "nature/samples/lead-fs-{note}.wav"
+    }
   }
 }
