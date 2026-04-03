@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>lil.audio</title>
   <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.min.js"></script>
-  <script src="sampler-engine.js"></script>
   <style>
     @font-face {
       font-family: 'ComicSans';
@@ -788,10 +787,12 @@ muteBtnEl.addEventListener('click', (e) => {
   e.stopPropagation();
   isMuted = !isMuted;
   if (isMuted) {
-    masterGain.gain.value = 0;
+    if (masterGain) masterGain.gain.value = 0;
+    Tone.Destination.mute = true;
     muteBtnEl.textContent = 'unmute';
   } else {
-    masterGain.gain.value = 0.6;
+    Tone.Destination.mute = false;
+    if (masterGain) masterGain.gain.value = 0.6;
     muteBtnEl.textContent = 'mute';
   }
 });
@@ -828,5 +829,6 @@ document.addEventListener('visibilitychange', () => {
 window.addEventListener('pagehide', stopAudioControlLoop);
 
 </script>
+<script src="sampler-engine.js"></script>
 </body>
 </html>
