@@ -114,7 +114,6 @@
         const kickProb = kickPattern[step % 16] || 0;
         if (kickProb > 0 && Math.random() < kickProb * wSP * 0.9) {
           S.kick.volume.value = lerp(-26, -2, wSP * kickProb);
-          S.kick.playbackRate = 0.9 + Math.random() * 0.3;
           S.kick.start(time);
         }
 
@@ -126,7 +125,6 @@
         const hatProb = hatPattern[step % 16] || 0;
         if (Math.random() < hatProb * wSP * 0.8) {
           S.hat.volume.value = lerp(-24, -6, wSP * hatProb);
-          S.hat.playbackRate = 0.7 + Math.random() * 0.8;
           S.hat.start(time);
         }
 
@@ -151,7 +149,6 @@
             
             kalimba.volume.value = lerp(-16, 0, wSP * melProb);
             // Varied playback rates for more range
-            kalimba.playbackRate = 0.5 + Math.random() * 1.2;
             kalimba.start(time);
           }
           
@@ -159,14 +156,12 @@
           if (step % 3 === 0 && Math.random() < wSP * 0.3) {
             const tripletKalimba = S.kalimbas[(step / 3) % S.kalimbas.length];
             tripletKalimba.volume.value = lerp(-20, -4, wSP);
-            tripletKalimba.playbackRate = 0.8 + Math.random() * 0.6;
             tripletKalimba.start(time + 0.05); // Slight delay for polyrhythm
           }
         } else {
           // Fallback for other worlds
           if (Math.random() < wSP * 0.45) {
             S.leads.sp.volume.value = lerp(-18, -2, wSP);
-            S.leads.sp.playbackRate = 0.8 + Math.random() * 0.8;
             S.leads.sp.start(time);
           }
         }
@@ -175,7 +170,6 @@
         const bassPattern = [1, 0, 0.3, 0, 0.6, 0, 0.2, 0];
         if (bassPattern[beat] && Math.random() < bassPattern[beat] * wSP * 0.8) {
           S.bass.volume.value = lerp(-20, -4, wSP);
-          S.bass.playbackRate = 0.8 + Math.random() * 0.4;
           S.bass.start(time);
         }
       }
@@ -184,12 +178,10 @@
       if (wSS > 0.15) {
         if (beat === 0 && Math.random() < wSS * 0.15) {
           S.leads.ss.volume.value = lerp(-22, -6, wSS);
-          S.leads.ss.playbackRate = 0.7 + Math.random() * 0.3;
           S.leads.ss.start(time);
         }
         if (beat === 0 && step % (STEPS * 4) === 0 && Math.random() < wSS * 0.2) {
           S.bass.volume.value = lerp(-28, -14, wSS);
-          S.bass.playbackRate = 0.6;
           S.bass.start(time);
         }
       }
@@ -198,7 +190,6 @@
       if (wFP > 0.15) {
         if ((beat === 0 || beat === 2 || beat === 4 || beat === 6) && Math.random() < wFP * 0.45) {
           S.bell.volume.value = lerp(-22, -4, wFP);
-          S.bell.playbackRate = 0.8 + Math.random() * 0.6;
           S.bell.start(time);
         }
         if ((beat === 3 || beat === 7) && Math.random() < wFP * 0.4) {
@@ -207,7 +198,6 @@
         }
         if (Math.random() < wFP * 0.3) {
           S.leads.fp.volume.value = lerp(-20, -4, wFP);
-          S.leads.fp.playbackRate = 0.7 + Math.random() * 0.8;
           S.leads.fp.start(time);
         }
         if (beat === 0 && Math.random() < wFP * 0.3) {
@@ -220,7 +210,6 @@
       if (wFS > 0.15) {
         if (beat === 0 && step % (STEPS * 6) === 0 && Math.random() < wFS * 0.25) {
           S.leads.fs.volume.value = lerp(-24, -8, wFS);
-          S.leads.fs.playbackRate = 0.5 + Math.random() * 0.3;
           S.leads.fs.start(time);
         }
       }
