@@ -254,19 +254,19 @@
 
       // ═══ HUM+SLEEP: Sparse, meditative with bass melody & middle melody ═══
       if (wSS > 0.15) {
-        // Original vocal lead
-        if (beat === 0 && Math.random() < wSS * 0.15) {
-          S.leads.ss.volume.value = lerp(-22, -6, wSS);
-          S.leads.ss.start(time);
-        }
-        
-        // Add bass melody 1 and middle melody 1 for angelxenakis
+        // Use only bass melody 1 and middle melody 1 for angelxenakis (no original lead)
         if (S.sleepMelodies && worldName === 'angelxenakis') {
           if (beat === 0 && Math.random() < wSS * 0.3) {
             const melodyIndex = Math.floor(Math.random() * S.sleepMelodies.length);
             const melody = S.sleepMelodies[melodyIndex];
             melody.volume.value = lerp(-20, -4, wSS);
             melody.start(time);
+          }
+        } else {
+          // Original vocal lead for other worlds
+          if (beat === 0 && Math.random() < wSS * 0.15) {
+            S.leads.ss.volume.value = lerp(-22, -6, wSS);
+            S.leads.ss.start(time);
           }
         }
         
@@ -304,13 +304,7 @@
 
       // ═══ GLOW+SLEEP: Deep drone with Saana & bass rumble ═══
       if (wFS > 0.15) {
-        // Original deep lead
-        if (beat === 0 && step % (STEPS * 6) === 0 && Math.random() < wFS * 0.25) {
-          S.leads.fs.volume.value = lerp(-24, -8, wFS);
-          S.leads.fs.start(time);
-        }
-        
-        // Add Saana 30sek and bass rumble for angelxenakis
+        // Use only Saana 30sek and bass rumble for angelxenakis (no original lead)
         if (S.ambientSamples && worldName === 'angelxenakis') {
           // Saana 30sek - longer atmospheric sample, less frequent
           if (beat === 0 && step % (STEPS * 8) === 0 && Math.random() < wFS * 0.4) {
@@ -324,6 +318,12 @@
             const rumble = S.ambientSamples[1]; // Bass rumble
             rumble.volume.value = lerp(-16, 0, wFS);
             rumble.start(time);
+          }
+        } else {
+          // Original deep lead for other worlds
+          if (beat === 0 && step % (STEPS * 6) === 0 && Math.random() < wFS * 0.25) {
+            S.leads.fs.volume.value = lerp(-24, -8, wFS);
+            S.leads.fs.start(time);
           }
         }
       }
