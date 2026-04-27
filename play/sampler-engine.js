@@ -57,6 +57,18 @@
         new Tone.Player(base + 'angelxenakis/samples/float-play/glockenspiel4.wav').connect(sGain)
       ];
       
+      // Multiple samples for SS corner (hum-sleep)
+      S.sleepMelodies = [
+        new Tone.Player(base + 'angelxenakis/samples/float-play/bass melody 1.wav').connect(sGain),
+        new Tone.Player(base + 'angelxenakis/samples/float-play/middle melody 1.wav').connect(sGain)
+      ];
+      
+      // Multiple samples for FS corner (glow-sleep)
+      S.ambientSamples = [
+        new Tone.Player(base + 'angelxenakis/samples/float-play/Saana 30sek.wav').connect(sGain),
+        new Tone.Player(base + 'angelxenakis/samples/float-sleep/bass rumble 1.wav').connect(sGain)
+      ];
+      
       S.leads = {
         sp: S.kalimbas[0], // Main kalimba for fallback
         ss: new Tone.Player(base + ws.leads.ss).connect(sGain),
@@ -76,6 +88,11 @@
     S.hat  = new Tone.Player(base + ws.hat).connect(sGain);
     S.rim  = new Tone.Player(base + ws.rim).connect(sGain);
     S.bell = new Tone.Player(base + ws.bell).connect(sGain);
+    
+    // Add snare for angelxenakis world
+    if (worldName === 'angelxenakis') {
+      S.snare = new Tone.Player(base + 'angelxenakis/samples/rhythm samples/snare.wav').connect(sGain);
+    }
     
     // Multiple bass players for smooth crossfading
     S.bassPlayers = [
@@ -161,9 +178,9 @@
         ];
         const hatProb = hatPattern[step % 16] || 0;
         
-        // Check for hi-hat rolls (every 32 steps with 15% chance)
-        if (step % 32 === 0 && Math.random() < 0.15 * wSP) {
-          rollCounter = 8; // Trigger 8-hit roll
+        // Check for hi-hat rolls (more frequent, longer)
+        if (step % 16 === 0 && Math.random() < 0.35 * wSP) {
+          rollCounter = 12 + Math.floor(Math.random() * 8); // 12-20 hit rolls
         }
         
         if (rollCounter > 0) {
@@ -177,6 +194,17 @@
           // Normal pattern
           S.hat.volume.value = lerp(-24, -6, wSP * hatProb);
           S.hat.start(time);
+        }
+        
+        // Add snare to hum-play
+        if (S.snare && (beat === 2 || beat === 6) && Math.random() < wSP * 0.6) {
+          S.snare.volume.value = lerp(-22, -4, wSP);
+          S.snare.start(time);
+        }
+        // Extra snare hits for variation
+        if (S.snare && beat === 1 && Math.random() < wSP * 0.2) {
+          S.snare.volume.value = lerp(-26, -8, wSP);
+          S.snare.start(time);
         }
 
         // Enhanced Kalimba: Multiple samples, IDM timing
@@ -224,12 +252,24 @@
         }
       }
 
-      // ═══ HUM+SLEEP: Sparse, meditative ═══
+      // ═══ HUM+SLEEP: Sparse, meditative with bass melody & middle melody ═══
       if (wSS > 0.15) {
+        // Original vocal lead
         if (beat === 0 && Math.random() < wSS * 0.15) {
           S.leads.ss.volume.value = lerp(-22, -6, wSS);
           S.leads.ss.start(time);
         }
+        
+        // Add bass melody 1 and middle melody 1 for angelxenakis
+        if (S.sleepMelodies && worldName === 'angelxenakis') {
+          if (beat === 0 && Math.random() < wSS * 0.3) {
+            const melodyIndex = Math.floor(Math.random() * S.sleepMelodies.length);
+            const melody = S.sleepMelodies[melodyIndex];
+            melody.volume.value = lerp(-20, -4, wSS);
+            melody.start(time);
+          }
+        }
+        
         if (beat === 0 && step % (STEPS * 4) === 0 && Math.random() < wSS * 0.2) {
           playBassWithCrossfade(lerp(-28, -14, wSS), time);
         }
@@ -262,11 +302,29 @@
         }
       }
 
-      // ═══ GLOW+SLEEP: Deep drone ═══
+      // ═══ GLOW+SLEEP: Deep drone with Saana & bass rumble ═══
       if (wFS > 0.15) {
+        // Original deep lead
         if (beat === 0 && step % (STEPS * 6) === 0 && Math.random() < wFS * 0.25) {
           S.leads.fs.volume.value = lerp(-24, -8, wFS);
           S.leads.fs.start(time);
+        }
+        
+        // Add Saana 30sek and bass rumble for angelxenakis
+        if (S.ambientSamples && worldName === 'angelxenakis') {
+          // Saana 30sek - longer atmospheric sample, less frequent
+          if (beat === 0 && step % (STEPS * 8) === 0 && Math.random() < wFS * 0.4) {
+            const saana = S.ambientSamples[0]; // Saana 30sek
+            saana.volume.value = lerp(-18, -2, wFS);
+            saana.start(time);
+          }
+          
+          // Bass rumble - more frequent, drone-like
+          if ((beat === 0 || beat === 4) && Math.random() < wFS * 0.5) {
+            const rumble = S.ambientSamples[1]; // Bass rumble
+            rumble.volume.value = lerp(-16, 0, wFS);
+            rumble.start(time);
+          }
         }
       }
 
