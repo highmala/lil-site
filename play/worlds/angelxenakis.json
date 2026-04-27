@@ -1,0 +1,67 @@
+{
+  "meta": {
+    "name": "Organic",
+    "artist": "angelxenakis"
+  },
+  "tempo": {
+    "sleep": 50,
+    "play": 100,
+    "glowMult": 0.9
+  },
+  "barsPerChord": 3,
+  "corners": {
+    "sp": { 
+      "scale": [0,2,4,7,9], 
+      "melDensity": 0.65, 
+      "kick": 0.4, 
+      "hat": 0.3, 
+      "swing": 0.15 
+    },
+    "ss": { 
+      "scale": [0,3,5,7,10], 
+      "melDensity": 0.2 
+    },
+    "fp": { 
+      "scale": [0,2,4,6,7,9,11], 
+      "bellDensity": 0.5 
+    },
+    "fs": { 
+      "scale": [0,2,4,7,9], 
+      "pad": 0.85, 
+      "noise": 0.4 
+    }
+  },
+  "mix": { 
+    "master": 0.75 
+  },
+  "fx": {
+    "melReverb": 0.45,
+    "decayMin": 3, 
+    "decayMax": 10,
+    "fbMin": 0.12, 
+    "fbMax": 0.45,
+    "filtMin": 900, 
+    "filtMax": 7000
+  },
+  "colors": { 
+    "sp": "#CD853F", 
+    "fp": "#DDA0DD", 
+    "ss": "#8B4513", 
+    "fs": "#2F4F4F" 
+  },
+  "samples": {
+    "leads": {
+      "sp": "angelxenakis/samples/lead-sp-kalimba.wav",
+      "ss": "angelxenakis/samples/lead-ss-vocal.wav",
+      "fp": "angelxenakis/samples/lead-fp-glock.wav",
+      "fs": "angelxenakis/samples/lead-fs-rumble.wav"
+    },
+    "bell": "angelxenakis/samples/bell-high.wav",
+    "pad": ["angelxenakis/samples/pad-warm.wav", "angelxenakis/samples/pad-bright.wav"],
+    "bass": "angelxenakis/samples/bass-low.wav",
+    "kick": "angelxenakis/samples/kick.wav",
+    "hat": "angelxenakis/samples/hat.wav",
+    "rim": "angelxenakis/samples/rim.wav",
+    "atmosphere": "angelxenakis/samples/atmosphere.wav"
+  }
+}
