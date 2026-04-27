@@ -9,6 +9,7 @@
   let sGain, sReverb, sDelay, sFilter;
   let sLoop, sStarted = false;
   let step = 0;
+  let rollCounter = 0; // For hi-hat rolls
 
   function corner(x, y) {
     if (x < 0.5 && y >= 0.5) return 'sp';
@@ -34,8 +35,9 @@
     const ws = world.samples;
     const base = '/play/worlds/';
 
-    // Enhanced SP corner: Multiple kalimba samples for IDM variety
+    // Enhanced for angelxenakis world: Multiple samples per corner
     if (worldName === 'angelxenakis') {
+      // Multiple kalimbas for SP corner
       S.kalimbas = [
         new Tone.Player(base + 'angelxenakis/samples/sing-play/kalimba.wav').connect(sGain),
         new Tone.Player(base + 'angelxenakis/samples/sing-play/kalimba+7.wav').connect(sGain),
@@ -46,10 +48,19 @@
         new Tone.Player(base + 'angelxenakis/samples/sing-play/kalimba+16.wav').connect(sGain),
         new Tone.Player(base + 'angelxenakis/samples/sing-play/kalimba+23.wav').connect(sGain)
       ];
+      
+      // Multiple glockenspiels for FP corner
+      S.glockenspiels = [
+        new Tone.Player(base + 'angelxenakis/samples/float-play/glockenspiel1.wav').connect(sGain),
+        new Tone.Player(base + 'angelxenakis/samples/float-play/glockenspiel2.wav').connect(sGain),
+        new Tone.Player(base + 'angelxenakis/samples/float-play/glockenspiel3.wav').connect(sGain),
+        new Tone.Player(base + 'angelxenakis/samples/float-play/glockenspiel4.wav').connect(sGain)
+      ];
+      
       S.leads = {
         sp: S.kalimbas[0], // Main kalimba for fallback
         ss: new Tone.Player(base + ws.leads.ss).connect(sGain),
-        fp: new Tone.Player(base + ws.leads.fp).connect(sGain),
+        fp: S.glockenspiels[0], // Main glockenspiel for fallback
         fs: new Tone.Player(base + ws.leads.fs).connect(sGain)
       };
     } else {
@@ -65,7 +76,14 @@
     S.hat  = new Tone.Player(base + ws.hat).connect(sGain);
     S.rim  = new Tone.Player(base + ws.rim).connect(sGain);
     S.bell = new Tone.Player(base + ws.bell).connect(sGain);
-    S.bass = new Tone.Player(base + ws.bass).connect(sGain);
+    
+    // Multiple bass players for smooth crossfading
+    S.bassPlayers = [
+      new Tone.Player(base + ws.bass).connect(sGain),
+      new Tone.Player(base + ws.bass).connect(sGain),
+      new Tone.Player(base + ws.bass).connect(sGain)
+    ];
+    S.currentBassIndex = 0;
 
     // Pad loops
     const padFiles = Array.isArray(ws.pad) ? ws.pad : [ws.pad];
@@ -90,6 +108,25 @@
     // ═══ ENHANCED SEQUENCER ═══
     const BPC = world.barsPerChord || 2;
     const STEPS = 8;
+
+    // Helper function for crossfading bass
+    function playBassWithCrossfade(volume, time) {
+      // Fade out previous bass
+      S.bassPlayers.forEach((player, i) => {
+        if (i !== S.currentBassIndex && player.state === 'started') {
+          player.volume.rampTo(-60, 0.05);
+        }
+      });
+      
+      // Play new bass with fade in
+      const currentBass = S.bassPlayers[S.currentBassIndex];
+      currentBass.volume.value = -60;
+      currentBass.start(time);
+      currentBass.volume.rampTo(volume, 0.05);
+      
+      // Cycle to next bass player
+      S.currentBassIndex = (S.currentBassIndex + 1) % S.bassPlayers.length;
+    }
 
     sLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
@@ -117,13 +154,27 @@
           S.kick.start(time);
         }
 
-        // IDM Hi-hat: polyrhythmic, glitchy
+        // IDM Hi-hat: polyrhythmic, glitchy + occasional rolls
         const hatPattern = [
           0.4, 0.8, 0.2, 0.6, 0.3, 0.9, 0.1, 0.7,
           0.5, 0.3, 0.8, 0.1, 0.6, 0.4, 0.9, 0.2
         ];
         const hatProb = hatPattern[step % 16] || 0;
-        if (Math.random() < hatProb * wSP * 0.8) {
+        
+        // Check for hi-hat rolls (every 32 steps with 15% chance)
+        if (step % 32 === 0 && Math.random() < 0.15 * wSP) {
+          rollCounter = 8; // Trigger 8-hit roll
+        }
+        
+        if (rollCounter > 0) {
+          // During roll: rapid 32nd notes
+          if (step % 2 === 0) { // Every 16th note during roll
+            S.hat.volume.value = lerp(-28, -8, wSP * 0.7);
+            S.hat.start(time);
+          }
+          rollCounter--;
+        } else if (Math.random() < hatProb * wSP * 0.8) {
+          // Normal pattern
           S.hat.volume.value = lerp(-24, -6, wSP * hatProb);
           S.hat.start(time);
         }
@@ -166,11 +217,10 @@
           }
         }
 
-        // Bass: Syncopated pattern
+        // Bass: Syncopated pattern with crossfade
         const bassPattern = [1, 0, 0.3, 0, 0.6, 0, 0.2, 0];
         if (bassPattern[beat] && Math.random() < bassPattern[beat] * wSP * 0.8) {
-          S.bass.volume.value = lerp(-20, -4, wSP);
-          S.bass.start(time);
+          playBassWithCrossfade(lerp(-20, -4, wSP), time);
         }
       }
 
@@ -181,8 +231,7 @@
           S.leads.ss.start(time);
         }
         if (beat === 0 && step % (STEPS * 4) === 0 && Math.random() < wSS * 0.2) {
-          S.bass.volume.value = lerp(-28, -14, wSS);
-          S.bass.start(time);
+          playBassWithCrossfade(lerp(-28, -14, wSS), time);
         }
       }
 
@@ -196,13 +245,20 @@
           S.rim.volume.value = lerp(-22, -8, wFP);
           S.rim.start(time);
         }
+        // Use all glockenspiel samples for variety
         if (Math.random() < wFP * 0.3) {
-          S.leads.fp.volume.value = lerp(-20, -4, wFP);
-          S.leads.fp.start(time);
+          if (S.glockenspiels && worldName === 'angelxenakis') {
+            const glockIndex = Math.floor(Math.random() * S.glockenspiels.length);
+            const glock = S.glockenspiels[glockIndex];
+            glock.volume.value = lerp(-20, -4, wFP);
+            glock.start(time);
+          } else {
+            S.leads.fp.volume.value = lerp(-20, -4, wFP);
+            S.leads.fp.start(time);
+          }
         }
         if (beat === 0 && Math.random() < wFP * 0.3) {
-          S.bass.volume.value = lerp(-24, -12, wFP);
-          S.bass.start(time);
+          playBassWithCrossfade(lerp(-24, -12, wFP), time);
         }
       }
 
