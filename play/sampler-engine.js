@@ -70,7 +70,7 @@
 
     // BL system: "charlie" looped sample → lowpass filter → gain (muted when outside BL) → master
     S.blGain   = new Tone.Gain(0).connect(sGain);
-    S.blFilter = new Tone.Filter({ frequency: 1000, type: 'lowpass', rolloff: -24 }).connect(S.blGain);
+    S.blFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.blGain);
     S.blCharlie = new Tone.Player({
       url: base + 'simple/samples/charlie.mp3',
       loop: true,
@@ -482,7 +482,7 @@
             const lx = Math.max(0, Math.min(1, sx * 2));
             const ly = Math.max(0, Math.min(1, sy * 2));
             const t = (lx + ly) / 2;
-            const cutoff = Math.exp(Math.log(1000) + t * (Math.log(20000) - Math.log(1000)));
+            const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
             S.blFilter.frequency.rampTo(cutoff, 0.05);
           }
         }
