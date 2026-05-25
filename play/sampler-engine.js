@@ -503,49 +503,72 @@
 
         const sx = (typeof xVal !== 'undefined') ? xVal : 0.5;
         const sy = (typeof yVal !== 'undefined') ? yVal : 0.5;
-        const inLowerHalf = (sy < 0.5);
 
-        // ═══ BL ↔ BR crossfade band along the lower half ═══
-        // Outside x ∈ [0.33, 0.67]: pure BL or pure BR.
-        // Inside the band: equal-power crossfade (cos/sin), both samples audible.
-        const bandLeft  = 0.33;
-        const bandRight = 0.67;
+        // ═══ Charlie (BL) + Rain (BR) audibility envelopes ═══
+        // Each sample has a 2D rectangle defining where it's audible.
+        // The rectangles overlap in x ∈ [0.37, 0.66] (the crossfade band).
+        //
+        //   Charlie:  x ∈ [0,    0.66],  y ∈ [0, 0.68]
+        //   Rain:     x ∈ [0.37, 1.00],  y ∈ [0, 0.68]
+        //
+        // In the x overlap band: equal-power crossfade (cos/sin).
+        // Outside the overlap (within each sample's rectangle): full amplitude.
+        // Above y=0.68: short soft fade to silence (5% band) to avoid clicks.
+        const overlapL = 0.37;
+        const overlapR = 0.66;
+        const yCap     = 0.68;
+        const yFade    = 0.05; // soft top edge
+
         let blAmp = 0, brAmp = 0;
-        if (inLowerHalf) {
-          if (sx <= bandLeft) {
-            blAmp = 1; brAmp = 0;
-          } else if (sx >= bandRight) {
-            blAmp = 0; brAmp = 1;
-          } else {
-            const t = (sx - bandLeft) / (bandRight - bandLeft); // 0 → 1
-            blAmp = Math.cos(t * Math.PI / 2);
-            brAmp = Math.sin(t * Math.PI / 2);
-          }
+
+        // X component
+        let blX = 0, brX = 0;
+        if (sx <= overlapL) {
+          blX = 1; brX = 0;
+        } else if (sx >= overlapR) {
+          blX = 0; brX = 1;
+        } else {
+          const t = (sx - overlapL) / (overlapR - overlapL); // 0 → 1
+          blX = Math.cos(t * Math.PI / 2);
+          brX = Math.sin(t * Math.PI / 2);
         }
+
+        // Y component: full inside [0, yCap], fades out over yFade above yCap, silent further up
+        let yAmp = 0;
+        if (sy <= yCap) {
+          yAmp = 1;
+        } else if (sy < yCap + yFade) {
+          yAmp = 1 - (sy - yCap) / yFade;
+        }
+
+        blAmp = blX * yAmp;
+        brAmp = brX * yAmp;
 
         // BL gain + filter
         if (S.blGain && S.blFilter) {
           S.blGain.gain.rampTo(blAmp, 0.08);
-          // Drive the BL filter from BL-local coords while audible.
-          // Clamp to BL square interior so the filter still maps sensibly during the
-          // crossfade band when the pointer is technically past x=0.5.
+          // Filter follows the original BL-square mapping: BL corner (0,0) → 150 Hz,
+          // UR corner of BL square (lx=1, ly=1, i.e. global (0.5, 0.5)) → 20 kHz.
+          // Clamp inputs to the BL square so behavior stays predictable outside.
           if (blAmp > 0.001) {
             const clampedX = Math.min(sx, 0.5);
+            const clampedY = Math.min(sy, 0.5);
             const lx = Math.max(0, Math.min(1, clampedX * 2));
-            const ly = Math.max(0, Math.min(1, sy * 2));
+            const ly = Math.max(0, Math.min(1, clampedY * 2));
             const t = (lx + ly) / 2;
             const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
             S.blFilter.frequency.rampTo(cutoff, 0.05);
           }
         }
 
-        // BR gain + filter (mirrored along anti-diagonal)
+        // BR gain + filter (mirrored along anti-diagonal of BR square)
         if (S.brGain && S.brFilter) {
           S.brGain.gain.rampTo(brAmp, 0.08);
           if (brAmp > 0.001) {
             const clampedX = Math.max(sx, 0.5);
+            const clampedY = Math.min(sy, 0.5);
             const lx = Math.max(0, Math.min(1, (clampedX - 0.5) * 2));
-            const ly = Math.max(0, Math.min(1, sy * 2));
+            const ly = Math.max(0, Math.min(1, clampedY * 2));
             const t = ((1 - lx) + ly) / 2;
             const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
             S.brFilter.frequency.rampTo(cutoff, 0.05);
