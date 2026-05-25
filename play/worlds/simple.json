@@ -5,8 +5,8 @@
     "description": "Minimal sample world. Y = kick density (16n, 1..16/bar). X = hihat density (32n, 1..32/bar)."
   },
   "tempo": {
-    "sleep": 111,
-    "play": 111,
+    "sleep": 55,
+    "play": 55,
     "glowMult": 1.0
   },
   "mix": {
