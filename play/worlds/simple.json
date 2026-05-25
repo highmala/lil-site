@@ -2,7 +2,7 @@
   "meta": {
     "name": "Simple",
     "artist": "angelxenakis",
-    "description": "Minimal sample world. Y = kick density (16n, 1..16/bar). X = hihat density (32n, 1..32/bar)."
+    "description": "4-quadrant sampler world. UR: kick density (Y) + hihat density (X). BL: looped 'charlie' sample with lowpass filter that opens toward UR of the quadrant. UL/BR: TBD."
   },
   "tempo": {
     "sleep": 111,
@@ -21,6 +21,7 @@
   "samples": {
     "kick":    "simple/samples/kick.wav",
     "kickAlt": "simple/samples/kick-alt.wav",
-    "hihat":   "simple/samples/hihat.wav"
+    "hihat":   "simple/samples/hihat.wav",
+    "blLoop":  "simple/samples/charlie.mp3"
   }
 }

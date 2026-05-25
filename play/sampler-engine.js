@@ -68,7 +68,16 @@
     S.kickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav').connect(sGain);
     S.hihat   = new Tone.Player(base + 'simple/samples/hihat.wav').connect(sGain);
 
-    // UL / BL / BR samples → placeholders (no samples yet; waiting on angelxenakis)
+    // BL system: "charlie" looped sample → lowpass filter → gain (muted when outside BL) → master
+    S.blGain   = new Tone.Gain(0).connect(sGain);
+    S.blFilter = new Tone.Filter({ frequency: 1000, type: 'lowpass', rolloff: -24 }).connect(S.blGain);
+    S.blCharlie = new Tone.Player({
+      url: base + 'simple/samples/charlie.mp3',
+      loop: true,
+      autostart: false
+    }).connect(S.blFilter);
+
+    // UL / BR: placeholders (waiting on samples)
 
     await Tone.loaded();
     console.log('[sampler] simple samples loaded');
@@ -107,11 +116,15 @@
 
     sLoop.start(0);
     S.hatLoop.start(0);
+
+    // Kick off BL looped playback (silent until pointer enters BL quadrant)
+    S.blCharlie.start();
+
     Tone.getTransport().bpm.value = world.tempo.play; // 111
     Tone.getTransport().start();
 
     sStarted = true;
-    console.log('[sampler] simple 4-quadrant sequencer running at', world.tempo.play, 'bpm (UR active)');
+    console.log('[sampler] simple 4-quadrant sequencer running at', world.tempo.play, 'bpm (UR + BL active)');
     return true;
   }
 
@@ -449,9 +462,30 @@
     update: function() {
       if (!sStarted || !world) return;
 
-      // Simple world: no FX nodes, sequencer reads yVal directly each tick
+      // Simple world: 4-quadrant routing. UR sequencers self-gate.
+      // BL system gets continuous gain + filter modulation here.
       if (world.meta && world.meta.name === 'Simple') {
         sGain.gain.value = world.mix.master;
+
+        const sx = (typeof xVal !== 'undefined') ? xVal : 0.5;
+        const sy = (typeof yVal !== 'undefined') ? yVal : 0.5;
+        const inBL = (sx < 0.5 && sy < 0.5);
+
+        if (S.blGain && S.blFilter) {
+          // Gain: full when in BL, muted otherwise (short ramp = smooth fade in/out)
+          const targetGain = inBL ? 1.0 : 0.0;
+          S.blGain.gain.rampTo(targetGain, 0.08);
+
+          // Filter: only modulated while in BL. Local coords (lx, ly) ∈ [0,1].
+          // (0,0) BL corner → 1000 Hz, (1,1) UR corner of the BL square → ~20 kHz, log-mapped.
+          if (inBL) {
+            const lx = Math.max(0, Math.min(1, sx * 2));
+            const ly = Math.max(0, Math.min(1, sy * 2));
+            const t = (lx + ly) / 2;
+            const cutoff = Math.exp(Math.log(1000) + t * (Math.log(20000) - Math.log(1000)));
+            S.blFilter.frequency.rampTo(cutoff, 0.05);
+          }
+        }
         return;
       }
 
