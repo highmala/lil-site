@@ -39,19 +39,27 @@
     sGain = new Tone.Gain(world.mix.master).toDestination();
 
     const base = '/play/worlds/';
-    S.kick  = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
-    S.hihat = new Tone.Player(base + 'simple/samples/hihat.wav').connect(sGain);
+    S.kick    = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
+    S.kickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav').connect(sGain);
+    S.hihat   = new Tone.Player(base + 'simple/samples/hihat.wav').connect(sGain);
 
     await Tone.loaded();
-    console.log('[sampler] simple kick + hihat loaded');
+    console.log('[sampler] simple kick + kick-alt + hihat loaded');
 
     // ═══ Kick: 16th-note sequencer, Y → density (1..16 hits per bar) ═══
+    // Per-hit replacement: Y also scales the chance that OSD kick replaces the original.
+    //   y=0 (far down) → 0% replace, y=1 (far up) → 75% replace, linear in between.
     let kickStep = 0;
     sLoop = new Tone.Loop(time => {
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
       const numHits = Math.round(y * 15) + 1; // 1..16
       if (isHitAtStep(kickStep, numHits, 16)) {
-        S.kick.start(time);
+        const replaceChance = y * 0.75;
+        if (Math.random() < replaceChance) {
+          S.kickAlt.start(time);
+        } else {
+          S.kick.start(time);
+        }
       }
       kickStep = (kickStep + 1) % 16;
     }, '16n');
