@@ -457,6 +457,171 @@
       sGain.gain.value = world.mix.master;
     },
 
-    isActive: function() { return sStarted; }
+    isActive: function() { return sStarted; },
+
+    // ═══ Record 15s of mic, extract top 3 transients, replace kick/kickAlt/hihat ═══
+    // onState: callback({state:'requesting'|'recording'|'processing'|'done'|'error', message?, progress?})
+    recordAndReplaceSamples: async function(durationSec, onState) {
+      durationSec = durationSec || 15;
+      const report = (s) => { try { onState && onState(s); } catch(_) {} };
+
+      let stream;
+      try {
+        report({ state: 'requesting' });
+        stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: false,
+            noiseSuppression: false,
+            autoGainControl: false
+          }
+        });
+      } catch (err) {
+        report({ state: 'error', message: 'Mic permission denied: ' + err.message });
+        throw err;
+      }
+
+      // Use a fresh AudioContext for capture so we don't fight Tone's context
+      const captureCtx = new (window.AudioContext || window.webkitAudioContext)();
+      const src = captureCtx.createMediaStreamSource(stream);
+
+      // Use ScriptProcessor for max-compat (deprecated but works everywhere reliably enough for 15s capture)
+      const bufSize = 4096;
+      const proc = captureCtx.createScriptProcessor(bufSize, 1, 1);
+      const sampleRate = captureCtx.sampleRate;
+      const totalSamples = Math.floor(sampleRate * durationSec);
+      const captureBuf = new Float32Array(totalSamples);
+      let writeIdx = 0;
+
+      proc.onaudioprocess = (e) => {
+        const input = e.inputBuffer.getChannelData(0);
+        const remaining = totalSamples - writeIdx;
+        if (remaining <= 0) return;
+        const n = Math.min(input.length, remaining);
+        captureBuf.set(input.subarray(0, n), writeIdx);
+        writeIdx += n;
+      };
+
+      src.connect(proc);
+      proc.connect(captureCtx.destination); // some browsers require this to actually pull data
+      // Mute output: route through a zero-gain node
+      // (already implicit since we don't actually wire audible feedback; ScriptProcessor needs dest)
+
+      report({ state: 'recording', progress: 0 });
+
+      // Progress ticks
+      const startTs = Date.now();
+      const progressTimer = setInterval(() => {
+        const p = Math.min(1, (Date.now() - startTs) / (durationSec * 1000));
+        report({ state: 'recording', progress: p });
+      }, 100);
+
+      // Wait for capture
+      await new Promise(r => setTimeout(r, durationSec * 1000 + 100));
+      clearInterval(progressTimer);
+
+      // Tear down capture
+      try { src.disconnect(); proc.disconnect(); } catch(_) {}
+      try { stream.getTracks().forEach(t => t.stop()); } catch(_) {}
+      try { captureCtx.close(); } catch(_) {}
+
+      report({ state: 'processing' });
+
+      // ═══ Transient detection ═══
+      // 1. RMS envelope over short windows
+      const hopMs = 5;
+      const winMs = 10;
+      const hop = Math.max(1, Math.floor(sampleRate * hopMs / 1000));
+      const win = Math.max(2, Math.floor(sampleRate * winMs / 1000));
+      const nFrames = Math.floor((captureBuf.length - win) / hop);
+      const env = new Float32Array(nFrames);
+      for (let f = 0; f < nFrames; f++) {
+        let sum = 0;
+        const start = f * hop;
+        for (let i = 0; i < win; i++) {
+          const s = captureBuf[start + i];
+          sum += s * s;
+        }
+        env[f] = Math.sqrt(sum / win);
+      }
+
+      // 2. Onset function: positive derivative of envelope (rising edges only)
+      const onset = new Float32Array(nFrames);
+      for (let f = 1; f < nFrames; f++) {
+        const d = env[f] - env[f - 1];
+        onset[f] = d > 0 ? d : 0;
+      }
+
+      // 3. Pick top 3 peaks with min spacing (~150ms) via greedy NMS by strength
+      const minSpacingFrames = Math.floor(150 / hopMs);
+      const sliceLenSec = 0.2;
+      const sliceLenSamples = Math.floor(sampleRate * sliceLenSec);
+
+      // Build list of (frame, strength) sorted by strength desc
+      const candidates = [];
+      for (let f = 1; f < nFrames - 1; f++) {
+        // local peak check
+        if (onset[f] > onset[f - 1] && onset[f] >= onset[f + 1] && onset[f] > 0.0005) {
+          candidates.push({ frame: f, strength: onset[f] });
+        }
+      }
+      candidates.sort((a, b) => b.strength - a.strength);
+
+      const chosen = [];
+      for (const c of candidates) {
+        let conflict = false;
+        for (const k of chosen) {
+          if (Math.abs(c.frame - k.frame) < minSpacingFrames) { conflict = true; break; }
+        }
+        if (!conflict) {
+          // Also need room for a 0.2s slice from this point
+          const startSample = c.frame * hop;
+          if (startSample + sliceLenSamples > captureBuf.length) continue;
+          chosen.push(c);
+        }
+        if (chosen.length >= 3) break;
+      }
+
+      if (chosen.length < 3) {
+        report({ state: 'error', message: 'Found only ' + chosen.length + ' transients. Try recording with louder, more distinct hits.' });
+        throw new Error('Not enough transients (' + chosen.length + ')');
+      }
+
+      // 4. Slice 0.2s windows; apply tiny pre-roll (3ms) so attack isn't cut
+      const preRollSamples = Math.floor(sampleRate * 0.003);
+      const slices = chosen.map(c => {
+        let start = c.frame * hop - preRollSamples;
+        if (start < 0) start = 0;
+        const end = Math.min(start + sliceLenSamples, captureBuf.length);
+        const slice = captureBuf.slice(start, end);
+        // Small fade-out (last 5ms) to avoid clicks
+        const fadeSamples = Math.min(slice.length, Math.floor(sampleRate * 0.005));
+        for (let i = 0; i < fadeSamples; i++) {
+          const idx = slice.length - fadeSamples + i;
+          slice[idx] *= (1 - i / fadeSamples);
+        }
+        return { slice, strength: c.strength };
+      });
+
+      // 5. Build Tone audio buffers and swap into S.kick / S.kickAlt / S.hihat
+      // Strongest → kick, 2nd → kickAlt, 3rd → hihat
+      const labels = ['kick', 'kickAlt', 'hihat'];
+      for (let i = 0; i < 3; i++) {
+        const data = slices[i].slice;
+        // Create AudioBuffer in Tone's context
+        const toneCtx = Tone.getContext().rawContext;
+        const ab = toneCtx.createBuffer(1, data.length, sampleRate);
+        ab.getChannelData(0).set(data);
+
+        const newPlayer = new Tone.Player(ab).connect(sGain);
+        await Tone.loaded();
+
+        const slot = labels[i];
+        try { if (S[slot]) S[slot].dispose(); } catch(_) {}
+        S[slot] = newPlayer;
+      }
+
+      report({ state: 'done', message: 'Replaced kick / kickAlt / hihat with 3 recorded transients.' });
+      return true;
+    }
   };
 })();

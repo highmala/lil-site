@@ -186,6 +186,51 @@
     }
     #mute-btn:hover { opacity: 0.5; }
 
+    /* Record button (Simple world only) */
+    #record-btn {
+      position: absolute;
+      bottom: 4vh;
+      left: 4vw;
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      border: 3px solid rgba(255,255,255,0.4);
+      background: #ff2d2d;
+      cursor: pointer;
+      z-index: 30;
+      display: none;
+      box-shadow: 0 0 0 0 rgba(255,45,45, 0.5);
+      transition: transform 0.15s ease, box-shadow 0.3s ease, background 0.3s;
+      padding: 0;
+    }
+    #record-btn:hover { transform: scale(1.08); }
+    #record-btn.recording {
+      background: #fff;
+      animation: rec-pulse 1s infinite;
+    }
+    #record-btn.processing {
+      background: #888;
+      animation: none;
+      cursor: wait;
+    }
+    @keyframes rec-pulse {
+      0%, 100% { box-shadow: 0 0 0 0 rgba(255,45,45,0.7); }
+      50% { box-shadow: 0 0 0 18px rgba(255,45,45,0); }
+    }
+    #record-status {
+      position: absolute;
+      bottom: calc(4vh + 70px);
+      left: 4vw;
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: 12px;
+      color: #fff;
+      opacity: 0.7;
+      letter-spacing: 0.05em;
+      pointer-events: none;
+      display: none;
+      max-width: 60vw;
+    }
+
     /* Version */
     #version {
       position: absolute;
@@ -226,6 +271,8 @@
 
     <div id="ball"></div>
     <button id="mute-btn">mute</button>
+    <button id="record-btn" title="Record 15s and replace samples" aria-label="Record"></button>
+    <div id="record-status"></div>
     <div id="world-selector" style="position:absolute; top:10px; right:10px; font-size:12px; opacity:0.6;">
       <a href="?world=nature" style="color:inherit; margin:0 5px;">forest</a>
       <a href="?world=vocal" style="color:inherit; margin:0 5px;">voices</a>
@@ -424,6 +471,10 @@ function initApp() {
             const ok = await window._samplerEngine.start();
             if (ok) {
               console.log('[lil] sampler engine started for world:', worldParam);
+              if (worldParam === 'simple') {
+                const rb = document.getElementById('record-btn');
+                if (rb) rb.style.display = 'block';
+              }
               return;
             }
           } catch(err) {
@@ -793,6 +844,53 @@ function updateAudio() {
 
 // ─── MUTE TOGGLE ───
 let isMuted = false;
+// ─── RECORD BUTTON (Simple world) ───
+const recordBtnEl = document.getElementById('record-btn');
+const recordStatusEl = document.getElementById('record-status');
+let isRecording = false;
+if (recordBtnEl) {
+  recordBtnEl.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (isRecording) return;
+    if (!window._samplerEngine || !window._samplerEngine.recordAndReplaceSamples) {
+      console.warn('[record] sampler engine not ready');
+      return;
+    }
+    isRecording = true;
+    recordBtnEl.classList.add('recording');
+    recordStatusEl.style.display = 'block';
+    try {
+      await window._samplerEngine.recordAndReplaceSamples(15, (s) => {
+        if (s.state === 'requesting') {
+          recordStatusEl.textContent = 'requesting mic...';
+        } else if (s.state === 'recording') {
+          const remaining = Math.max(0, Math.ceil(15 * (1 - (s.progress || 0))));
+          recordStatusEl.textContent = 'recording... ' + remaining + 's';
+        } else if (s.state === 'processing') {
+          recordBtnEl.classList.remove('recording');
+          recordBtnEl.classList.add('processing');
+          recordStatusEl.textContent = 'finding transients...';
+        } else if (s.state === 'done') {
+          recordStatusEl.textContent = 'samples replaced ✓';
+          setTimeout(() => { recordStatusEl.style.display = 'none'; }, 3000);
+        } else if (s.state === 'error') {
+          recordStatusEl.textContent = 'error: ' + (s.message || 'unknown');
+          setTimeout(() => { recordStatusEl.style.display = 'none'; }, 5000);
+        }
+      });
+    } catch(err) {
+      console.error('[record] failed:', err);
+      recordStatusEl.textContent = 'error: ' + err.message;
+      setTimeout(() => { recordStatusEl.style.display = 'none'; }, 5000);
+    } finally {
+      isRecording = false;
+      recordBtnEl.classList.remove('recording');
+      recordBtnEl.classList.remove('processing');
+    }
+  });
+}
+
 muteBtnEl.addEventListener('click', (e) => {
   e.stopPropagation();
   isMuted = !isMuted;
