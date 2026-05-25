@@ -64,11 +64,16 @@
     const base = '/play/worlds/';
 
     // UR samples (the original Simple system: 2 kicks + hihat)
+    // -5 dB on each to balance against BL sample level
     S.kick    = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
     S.kickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav').connect(sGain);
     S.hihat   = new Tone.Player(base + 'simple/samples/hihat.wav').connect(sGain);
+    S.kick.volume.value    = -5;
+    S.kickAlt.volume.value = -5;
+    S.hihat.volume.value   = -5;
 
     // BL system: "charlie" looped sample → lowpass filter → gain (muted when outside BL) → master
+    // +5 dB on the player to balance against UR drums
     S.blGain   = new Tone.Gain(0).connect(sGain);
     S.blFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.blGain);
     S.blCharlie = new Tone.Player({
@@ -76,6 +81,7 @@
       loop: true,
       autostart: false
     }).connect(S.blFilter);
+    S.blCharlie.volume.value = 5;
 
     // UL / BR: placeholders (waiting on samples)
 
@@ -677,6 +683,7 @@
         ab.getChannelData(0).set(data);
 
         const newPlayer = new Tone.Player(ab).connect(sGain);
+        newPlayer.volume.value = -5; // match UR drum balance
         await Tone.loaded();
 
         const slot = labels[i];
