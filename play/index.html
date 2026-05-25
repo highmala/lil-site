@@ -163,9 +163,24 @@
       position: absolute;
       background: currentColor;
       opacity: 0.04;
+      transition: opacity 0.4s;
     }
     #grid .h { left: 0; right: 0; height: 1px; top: 50%; }
     #grid .v { top: 0; bottom: 0; width: 1px; left: 50%; }
+    body.world-simple #grid .line { opacity: 0.18; }
+
+    /* Quadrant active highlight (Simple world) */
+    #quad-highlight {
+      position: absolute;
+      width: 50%;
+      height: 50%;
+      background: rgba(255,255,255,0.05);
+      pointer-events: none;
+      z-index: 1;
+      display: none;
+      transition: top 0.15s ease, left 0.15s ease, background 0.3s;
+    }
+    body.world-simple #quad-highlight { display: block; }
 
     /* Mute button */
     #mute-btn {
@@ -257,6 +272,7 @@
       <div class="line h"></div>
       <div class="line v"></div>
     </div>
+    <div id="quad-highlight"></div>
 
     <div id="app-logo">lil</div>
 
@@ -422,6 +438,20 @@ function updateVisuals(now = performance.now()) {
   gridLineEls.forEach(el => { el.style.color = textColor; });
   if (promptEl) promptEl.style.color = textColor;
 
+  // Simple world: highlight the active quadrant
+  if (document.body.classList.contains('world-simple')) {
+    const qh = document.getElementById('quad-highlight');
+    if (qh) {
+      // x ∈ [0,1], y ∈ [0,1]; UR = x≥0.5 & y≥0.5
+      const isRight = x >= 0.5;
+      const isUpper = y >= 0.5;
+      qh.style.left = (fieldMetrics.left + (isRight ? fieldMetrics.width * 0.5 : 0)) + 'px';
+      qh.style.top  = (fieldMetrics.top  + (isUpper ? 0 : fieldMetrics.height * 0.5)) + 'px';
+      qh.style.width  = (fieldMetrics.width  * 0.5) + 'px';
+      qh.style.height = (fieldMetrics.height * 0.5) + 'px';
+    }
+  }
+
   // Color drift is handled by the glide loop
 
   // Labels: brighter in sleep, dimmer in play. Highlight the nearest axis label.
@@ -472,6 +502,7 @@ function initApp() {
             if (ok) {
               console.log('[lil] sampler engine started for world:', worldParam);
               if (worldParam === 'simple') {
+                document.body.classList.add('world-simple');
                 const rb = document.getElementById('record-btn');
                 if (rb) rb.style.display = 'block';
               }

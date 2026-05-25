@@ -27,53 +27,83 @@
     return Math.floor(stepIdx * numHits / total) !== Math.floor((stepIdx - 1) * numHits / total);
   }
 
+  // ═══ SIMPLE WORLD: 4-quadrant system ═══
+  // Field is divided into 4 quadrants, each with its own independent sequencer logic.
+  // Only the quadrant currently containing the pointer is active (others stay silent).
+  // Pointer position within a quadrant is remapped to local (lx, ly) ∈ [0,1].
+  //
+  //   UL (upper-left)   |   UR (upper-right) ← kick density (Y) + hihat density (X)
+  //   ------------------+-------------------
+  //   BL (bottom-left)  |   BR (bottom-right)
+  function getActiveQuadrant(x, y) {
+    if (x >= 0.5 && y >= 0.5) return 'UR';
+    if (x <  0.5 && y >= 0.5) return 'UL';
+    if (x <  0.5 && y <  0.5) return 'BL';
+    return 'BR';
+  }
+  function localCoords(quad, x, y) {
+    let lx, ly;
+    if (quad === 'UR') { lx = (x - 0.5) * 2; ly = (y - 0.5) * 2; }
+    else if (quad === 'UL') { lx = x * 2;       ly = (y - 0.5) * 2; }
+    else if (quad === 'BL') { lx = x * 2;       ly = y * 2; }
+    else /* BR */          { lx = (x - 0.5) * 2; ly = y * 2; }
+    return { lx: Math.max(0, Math.min(1, lx)), ly: Math.max(0, Math.min(1, ly)) };
+  }
+
   async function initSimple(worldName) {
-    console.log('[sampler] init SIMPLE world');
+    console.log('[sampler] init SIMPLE world (4-quadrant)');
 
     const resp = await fetch('/play/worlds/' + worldName + '.json');
     if (!resp.ok) throw new Error('World JSON not found: ' + resp.status);
     world = await resp.json();
     console.log('[sampler] world loaded:', world.meta.name);
 
-    // Minimal chain: kick → master gain → destination (no FX yet, keep it simple)
+    // Minimal chain: master gain → destination (no FX)
     sGain = new Tone.Gain(world.mix.master).toDestination();
 
     const base = '/play/worlds/';
+
+    // UR samples (the original Simple system: 2 kicks + hihat)
     S.kick    = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
     S.kickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav').connect(sGain);
     S.hihat   = new Tone.Player(base + 'simple/samples/hihat.wav').connect(sGain);
 
-    await Tone.loaded();
-    console.log('[sampler] simple kick + kick-alt + hihat loaded');
+    // UL / BL / BR samples → placeholders (no samples yet; waiting on angelxenakis)
 
-    // ═══ Kick: 16th-note sequencer, Y → density (1..16 hits per bar) ═══
-    // Per-hit replacement: Y also scales the chance that OSD kick replaces the original.
-    //   y=0 (far down) → 0% replace, y=1 (far up) → 75% replace, linear in between.
-    let kickStep = 0;
+    await Tone.loaded();
+    console.log('[sampler] simple samples loaded');
+
+    // ═══ UR system: kick 16n density (Y) + hihat 32n density (X) ═══
+    let urKickStep = 0;
     sLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
-      const numHits = Math.round(y * 15) + 1; // 1..16
-      if (isHitAtStep(kickStep, numHits, 16)) {
-        const replaceChance = y * 0.75;
-        if (Math.random() < replaceChance) {
-          S.kickAlt.start(time);
-        } else {
-          S.kick.start(time);
-        }
+      if (getActiveQuadrant(x, y) !== 'UR') { urKickStep = (urKickStep + 1) % 16; return; }
+      const { ly } = localCoords('UR', x, y);
+      const numHits = Math.round(ly * 15) + 1; // 1..16
+      if (isHitAtStep(urKickStep, numHits, 16)) {
+        const replaceChance = ly * 0.75;
+        if (Math.random() < replaceChance) S.kickAlt.start(time);
+        else                                S.kick.start(time);
       }
-      kickStep = (kickStep + 1) % 16;
+      urKickStep = (urKickStep + 1) % 16;
     }, '16n');
 
-    // ═══ Hihat: 32nd-note sequencer, X → density (1..32 hits per bar) ═══
-    let hatStep = 0;
+    let urHatStep = 0;
     S.hatLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
-      const numHits = Math.round(x * 31) + 1; // 1..32
-      if (isHitAtStep(hatStep, numHits, 32)) {
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UR') { urHatStep = (urHatStep + 1) % 32; return; }
+      const { lx } = localCoords('UR', x, y);
+      const numHits = Math.round(lx * 31) + 1; // 1..32
+      if (isHitAtStep(urHatStep, numHits, 32)) {
         S.hihat.start(time);
       }
-      hatStep = (hatStep + 1) % 32;
+      urHatStep = (urHatStep + 1) % 32;
     }, '32n');
+
+    // ═══ UL / BL / BR systems: placeholders (silent until samples + logic provided) ═══
+    // When angelxenakis drops samples and describes logic, we'll wire them up here.
 
     sLoop.start(0);
     S.hatLoop.start(0);
@@ -81,7 +111,7 @@
     Tone.getTransport().start();
 
     sStarted = true;
-    console.log('[sampler] simple sequencers (kick 16n + hat 32n) running at', world.tempo.play, 'bpm');
+    console.log('[sampler] simple 4-quadrant sequencer running at', world.tempo.play, 'bpm (UR active)');
     return true;
   }
 
