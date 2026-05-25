@@ -18,12 +18,13 @@
     return 'fs';
   }
 
-  // ═══ Euclidean-style hit distribution: spread N hits evenly across 16 steps ═══
-  function isHitAtStep(stepIdx, numHits) {
+  // ═══ Euclidean-style hit distribution: spread N hits evenly across `total` steps ═══
+  function isHitAtStep(stepIdx, numHits, total) {
+    total = total || 16;
     if (numHits <= 0) return false;
-    if (numHits >= 16) return true;
-    // Hit on step if (stepIdx * numHits) crosses an integer boundary vs (stepIdx-1) * numHits
-    return Math.floor(stepIdx * numHits / 16) !== Math.floor((stepIdx - 1) * numHits / 16) || stepIdx === 0;
+    if (numHits >= total) return true;
+    if (stepIdx === 0) return true;
+    return Math.floor(stepIdx * numHits / total) !== Math.floor((stepIdx - 1) * numHits / total);
   }
 
   async function initSimple(worldName) {
@@ -38,33 +39,41 @@
     sGain = new Tone.Gain(world.mix.master).toDestination();
 
     const base = '/play/worlds/';
-    S.kick = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
+    S.kick  = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
+    S.hihat = new Tone.Player(base + 'simple/samples/hihat.wav').connect(sGain);
 
     await Tone.loaded();
-    console.log('[sampler] simple kick loaded');
+    console.log('[sampler] simple kick + hihat loaded');
 
-    // ═══ 16th-note sequencer, always running ═══
-    // Y position maps to number of hits per bar (0..16)
-    // Hits distributed evenly across 16 steps (Euclidean)
-    let stepIdx = 0;
+    // ═══ Kick: 16th-note sequencer, Y → density (1..16 hits per bar) ═══
+    let kickStep = 0;
     sLoop = new Tone.Loop(time => {
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
-      // y ranges 0 (bottom) to 1 (top). 16 discrete levels: 1 hit (bottom) ... 16 hits (top).
-      const numHits = Math.round(y * 15) + 1;
-
-      if (isHitAtStep(stepIdx, numHits)) {
+      const numHits = Math.round(y * 15) + 1; // 1..16
+      if (isHitAtStep(kickStep, numHits, 16)) {
         S.kick.start(time);
       }
-
-      stepIdx = (stepIdx + 1) % 16;
+      kickStep = (kickStep + 1) % 16;
     }, '16n');
 
+    // ═══ Hihat: 32nd-note sequencer, X → density (1..32 hits per bar) ═══
+    let hatStep = 0;
+    S.hatLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const numHits = Math.round(x * 31) + 1; // 1..32
+      if (isHitAtStep(hatStep, numHits, 32)) {
+        S.hihat.start(time);
+      }
+      hatStep = (hatStep + 1) % 32;
+    }, '32n');
+
     sLoop.start(0);
+    S.hatLoop.start(0);
     Tone.getTransport().bpm.value = world.tempo.play; // 111
     Tone.getTransport().start();
 
     sStarted = true;
-    console.log('[sampler] simple sequencer running at', world.tempo.play, 'bpm');
+    console.log('[sampler] simple sequencers (kick 16n + hat 32n) running at', world.tempo.play, 'bpm');
     return true;
   }
 

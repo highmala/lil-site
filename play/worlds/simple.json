@@ -2,7 +2,7 @@
   "meta": {
     "name": "Simple",
     "artist": "angelxenakis",
-    "description": "Minimal kick-only world. Y position controls 16th-note density: top = 16 hits per bar, bottom = silent."
+    "description": "Minimal sample world. Y = kick density (16n, 1..16/bar). X = hihat density (32n, 1..32/bar)."
   },
   "tempo": {
     "sleep": 111,
@@ -19,6 +19,7 @@
     "fs": "#222222"
   },
   "samples": {
-    "kick": "simple/samples/kick.wav"
+    "kick":  "simple/samples/kick.wav",
+    "hihat": "simple/samples/hihat.wav"
   }
 }
