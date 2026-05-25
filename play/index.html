@@ -506,6 +506,8 @@ function initApp() {
                 const rb = document.getElementById('record-btn');
                 if (rb) rb.style.display = 'block';
               }
+              // Drive sampler update() each tick (gain/filter modulation needs this)
+              startAudioControlLoop();
               return;
             }
           } catch(err) {
