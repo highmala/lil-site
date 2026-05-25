@@ -72,27 +72,15 @@
     S.kickAlt.volume.value = -5;
     S.hihat.volume.value   = -5;
 
-    // BL system: "charlie" looped sample → lowpass filter → gain (muted when outside BL) → master
-    // +5 dB on the player to balance against UR drums
+    // BL system: "charlie" with 10s crossfade loop → lowpass filter → gain → master
     S.blGain   = new Tone.Gain(0).connect(sGain);
     S.blFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.blGain);
-    S.blCharlie = new Tone.Player({
-      url: base + 'simple/samples/charlie.mp3',
-      loop: true,
-      autostart: false
-    }).connect(S.blFilter);
-    S.blCharlie.volume.value = 5;
+    S.blBuffer = await new Tone.ToneAudioBuffer().load(base + 'simple/samples/charlie.mp3');
 
-    // BR system: "soothing rain" looped → lowpass filter (mirrored vs BL) → gain → master
-    // Open at upper-left corner of BR square, 150 Hz at lower-right corner.
+    // BR system: "soothing rain" with 10s crossfade loop → mirrored filter → gain → master
     S.brGain   = new Tone.Gain(0).connect(sGain);
     S.brFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.brGain);
-    S.brRain = new Tone.Player({
-      url: base + 'simple/samples/soothing-rain.mp3',
-      loop: true,
-      autostart: false
-    }).connect(S.brFilter);
-    S.brRain.volume.value = 5;
+    S.brBuffer = await new Tone.ToneAudioBuffer().load(base + 'simple/samples/soothing-rain.mp3');
 
     // UL: placeholder (waiting on samples)
 
@@ -134,9 +122,37 @@
     sLoop.start(0);
     S.hatLoop.start(0);
 
-    // Kick off looped playback (silent until pointer enters their quadrant)
-    S.blCharlie.start();
-    S.brRain.start();
+    // ═══ Crossfade looper helper ═══
+    // Spawns a fresh Tone.Player every (duration - fadeSec) seconds, each with its own
+    // fadeIn/fadeOut envelope. Adjacent cycles overlap by fadeSec, producing a seamless
+    // crossfade across the loop boundary. Old players self-dispose after playback.
+    function startCrossfadeLooper(buffer, destination, fadeSec, volumeDb, label) {
+      const duration = buffer.duration;
+      const fade = Math.min(fadeSec, duration * 0.45); // safety
+      const cycleLen = duration - fade;
+      let nextStart = Tone.now() + 0.2; // small lookahead
+
+      function spawn() {
+        const startAt = nextStart;
+        const p = new Tone.Player(buffer).connect(destination);
+        p.volume.value = volumeDb;
+        p.fadeIn = fade;
+        p.fadeOut = fade;
+        p.start(startAt);
+        // schedule disposal a bit after it would naturally stop
+        const lifetimeMs = (startAt - Tone.now() + duration + 1) * 1000;
+        setTimeout(() => { try { p.dispose(); } catch(_) {} }, lifetimeMs);
+
+        nextStart = startAt + cycleLen;
+        const msToNextSpawn = Math.max(0, (nextStart - Tone.now()) * 1000);
+        setTimeout(spawn, msToNextSpawn);
+      }
+      spawn();
+      console.log('[sampler] crossfade looper started:', label, 'duration=' + duration.toFixed(1) + 's fade=' + fade + 's');
+    }
+
+    startCrossfadeLooper(S.blBuffer, S.blFilter, 10, 5, 'BL/charlie');
+    startCrossfadeLooper(S.brBuffer, S.brFilter, 10, 5, 'BR/rain');
 
     Tone.getTransport().bpm.value = world.tempo.play; // 111
     Tone.getTransport().start();
