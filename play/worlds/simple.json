@@ -2,67 +2,23 @@
   "meta": {
     "name": "Simple",
     "artist": "angelxenakis",
-    "description": "A blank canvas — minimal world for testing new ideas"
+    "description": "Minimal kick-only world. Y position controls 16th-note density: top = 16 hits per bar, bottom = silent."
   },
   "tempo": {
-    "sleep": 60,
-    "play": 110,
-    "glowMult": 0.9
-  },
-  "barsPerChord": 2,
-  "corners": {
-    "sp": {
-      "scale": [0, 2, 4, 7, 9],
-      "melDensity": 0.5,
-      "kick": 0.4,
-      "hat": 0.3,
-      "swing": 0.1
-    },
-    "ss": {
-      "scale": [0, 3, 5, 7, 10],
-      "melDensity": 0.2
-    },
-    "fp": {
-      "scale": [0, 2, 4, 7, 9, 11],
-      "bellDensity": 0.4
-    },
-    "fs": {
-      "scale": [0, 2, 4, 7, 9],
-      "pad": 0.8,
-      "noise": 0.3
-    }
+    "sleep": 111,
+    "play": 111,
+    "glowMult": 1.0
   },
   "mix": {
-    "master": 0.75
-  },
-  "fx": {
-    "melReverb": 0.4,
-    "decayMin": 2,
-    "decayMax": 8,
-    "fbMin": 0.1,
-    "fbMax": 0.4,
-    "filtMin": 800,
-    "filtMax": 7000
+    "master": 0.85
   },
   "colors": {
-    "sp": "#E8C547",
-    "fp": "#7FB5E0",
-    "ss": "#A87C5F",
-    "fs": "#3A4A5C"
+    "sp": "#888888",
+    "fp": "#888888",
+    "ss": "#222222",
+    "fs": "#222222"
   },
   "samples": {
-    "leads": {
-      "sp": "simple/samples/lead-sp.wav",
-      "ss": "simple/samples/lead-ss.wav",
-      "fp": "simple/samples/lead-fp.wav",
-      "fs": "simple/samples/lead-fs.wav"
-    },
-    "bell": "simple/samples/bell.wav",
-    "pad": ["simple/samples/pad.wav"],
-    "bass": "simple/samples/bass.wav",
-    "kick": "simple/samples/kick.wav",
-    "hat": "simple/samples/hat.wav",
-    "rim": "simple/samples/rim.wav",
-    "atmosphere": "simple/samples/atmosphere.wav"
+    "kick": "simple/samples/kick.wav"
   }
 }

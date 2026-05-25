@@ -18,7 +18,59 @@
     return 'fs';
   }
 
+  // ═══ Euclidean-style hit distribution: spread N hits evenly across 16 steps ═══
+  function isHitAtStep(stepIdx, numHits) {
+    if (numHits <= 0) return false;
+    if (numHits >= 16) return true;
+    // Hit on step if (stepIdx * numHits) crosses an integer boundary vs (stepIdx-1) * numHits
+    return Math.floor(stepIdx * numHits / 16) !== Math.floor((stepIdx - 1) * numHits / 16) || stepIdx === 0;
+  }
+
+  async function initSimple(worldName) {
+    console.log('[sampler] init SIMPLE world');
+
+    const resp = await fetch('/play/worlds/' + worldName + '.json');
+    if (!resp.ok) throw new Error('World JSON not found: ' + resp.status);
+    world = await resp.json();
+    console.log('[sampler] world loaded:', world.meta.name);
+
+    // Minimal chain: kick → master gain → destination (no FX yet, keep it simple)
+    sGain = new Tone.Gain(world.mix.master).toDestination();
+
+    const base = '/play/worlds/';
+    S.kick = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
+
+    await Tone.loaded();
+    console.log('[sampler] simple kick loaded');
+
+    // ═══ 16th-note sequencer, always running ═══
+    // Y position maps to number of hits per bar (0..16)
+    // Hits distributed evenly across 16 steps (Euclidean)
+    let stepIdx = 0;
+    sLoop = new Tone.Loop(time => {
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      // y ranges 0 (bottom) to 1 (top). 16 discrete levels: 1 hit (bottom) ... 16 hits (top).
+      const numHits = Math.round(y * 15) + 1;
+
+      if (isHitAtStep(stepIdx, numHits)) {
+        S.kick.start(time);
+      }
+
+      stepIdx = (stepIdx + 1) % 16;
+    }, '16n');
+
+    sLoop.start(0);
+    Tone.getTransport().bpm.value = world.tempo.play; // 111
+    Tone.getTransport().start();
+
+    sStarted = true;
+    console.log('[sampler] simple sequencer running at', world.tempo.play, 'bpm');
+    return true;
+  }
+
   async function init(worldName) {
+    if (worldName === 'simple') return initSimple(worldName);
+
     console.log('[sampler] init:', worldName);
 
     const resp = await fetch('/play/worlds/' + worldName + '.json');
@@ -349,6 +401,13 @@
 
     update: function() {
       if (!sStarted || !world) return;
+
+      // Simple world: no FX nodes, sequencer reads yVal directly each tick
+      if (world.meta && world.meta.name === 'Simple') {
+        sGain.gain.value = world.mix.master;
+        return;
+      }
+
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
 
