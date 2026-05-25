@@ -151,8 +151,8 @@
       console.log('[sampler] crossfade looper started:', label, 'duration=' + duration.toFixed(1) + 's fade=' + fade + 's');
     }
 
-    startCrossfadeLooper(S.blBuffer, S.blFilter, 10, 5, 'BL/charlie');
-    startCrossfadeLooper(S.brBuffer, S.brFilter, 10, 5, 'BR/rain');
+    startCrossfadeLooper(S.blBuffer, S.blFilter, 10, 5,  'BL/charlie');
+    startCrossfadeLooper(S.brBuffer, S.brFilter, 10, -6, 'BR/rain');
 
     Tone.getTransport().bpm.value = world.tempo.play; // 111
     Tone.getTransport().start();
@@ -503,28 +503,50 @@
 
         const sx = (typeof xVal !== 'undefined') ? xVal : 0.5;
         const sy = (typeof yVal !== 'undefined') ? yVal : 0.5;
-        const inBL = (sx <  0.5 && sy <  0.5);
-        const inBR = (sx >= 0.5 && sy <  0.5);
+        const inLowerHalf = (sy < 0.5);
+
+        // ═══ BL ↔ BR crossfade band along the lower half ═══
+        // Outside x ∈ [0.33, 0.67]: pure BL or pure BR.
+        // Inside the band: equal-power crossfade (cos/sin), both samples audible.
+        const bandLeft  = 0.33;
+        const bandRight = 0.67;
+        let blAmp = 0, brAmp = 0;
+        if (inLowerHalf) {
+          if (sx <= bandLeft) {
+            blAmp = 1; brAmp = 0;
+          } else if (sx >= bandRight) {
+            blAmp = 0; brAmp = 1;
+          } else {
+            const t = (sx - bandLeft) / (bandRight - bandLeft); // 0 → 1
+            blAmp = Math.cos(t * Math.PI / 2);
+            brAmp = Math.sin(t * Math.PI / 2);
+          }
+        }
 
         // BL gain + filter
         if (S.blGain && S.blFilter) {
-          S.blGain.gain.rampTo(inBL ? 1.0 : 0.0, 0.08);
-          if (inBL) {
-            const lx = Math.max(0, Math.min(1, sx * 2));
+          S.blGain.gain.rampTo(blAmp, 0.08);
+          // Drive the BL filter from BL-local coords while audible.
+          // Clamp to BL square interior so the filter still maps sensibly during the
+          // crossfade band when the pointer is technically past x=0.5.
+          if (blAmp > 0.001) {
+            const clampedX = Math.min(sx, 0.5);
+            const lx = Math.max(0, Math.min(1, clampedX * 2));
             const ly = Math.max(0, Math.min(1, sy * 2));
-            const t = (lx + ly) / 2; // 0 at BL corner → 1 at UR corner of square
+            const t = (lx + ly) / 2;
             const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
             S.blFilter.frequency.rampTo(cutoff, 0.05);
           }
         }
 
-        // BR gain + filter (mirrored: open at upper-left of BR, 150 Hz at lower-right)
+        // BR gain + filter (mirrored along anti-diagonal)
         if (S.brGain && S.brFilter) {
-          S.brGain.gain.rampTo(inBR ? 1.0 : 0.0, 0.08);
-          if (inBR) {
-            const lx = Math.max(0, Math.min(1, (sx - 0.5) * 2));
+          S.brGain.gain.rampTo(brAmp, 0.08);
+          if (brAmp > 0.001) {
+            const clampedX = Math.max(sx, 0.5);
+            const lx = Math.max(0, Math.min(1, (clampedX - 0.5) * 2));
             const ly = Math.max(0, Math.min(1, sy * 2));
-            const t = ((1 - lx) + ly) / 2; // 0 at lower-right corner → 1 at upper-left corner of square
+            const t = ((1 - lx) + ly) / 2;
             const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
             S.brFilter.frequency.rampTo(cutoff, 0.05);
           }
