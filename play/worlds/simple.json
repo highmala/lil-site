@@ -22,6 +22,7 @@
     "kick":    "simple/samples/kick.wav",
     "kickAlt": "simple/samples/kick-alt.wav",
     "hihat":   "simple/samples/hihat.wav",
-    "blLoop":  "simple/samples/charlie.mp3"
+    "blLoop":  "simple/samples/charlie.mp3",
+    "brLoop":  "simple/samples/soothing-rain.mp3"
   }
 }

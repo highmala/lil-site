@@ -83,7 +83,18 @@
     }).connect(S.blFilter);
     S.blCharlie.volume.value = 5;
 
-    // UL / BR: placeholders (waiting on samples)
+    // BR system: "soothing rain" looped → lowpass filter (mirrored vs BL) → gain → master
+    // Open at upper-left corner of BR square, 150 Hz at lower-right corner.
+    S.brGain   = new Tone.Gain(0).connect(sGain);
+    S.brFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.brGain);
+    S.brRain = new Tone.Player({
+      url: base + 'simple/samples/soothing-rain.mp3',
+      loop: true,
+      autostart: false
+    }).connect(S.brFilter);
+    S.brRain.volume.value = 5;
+
+    // UL: placeholder (waiting on samples)
 
     await Tone.loaded();
     console.log('[sampler] simple samples loaded');
@@ -123,8 +134,9 @@
     sLoop.start(0);
     S.hatLoop.start(0);
 
-    // Kick off BL looped playback (silent until pointer enters BL quadrant)
+    // Kick off looped playback (silent until pointer enters their quadrant)
     S.blCharlie.start();
+    S.brRain.start();
 
     Tone.getTransport().bpm.value = world.tempo.play; // 111
     Tone.getTransport().start();
@@ -475,21 +487,30 @@
 
         const sx = (typeof xVal !== 'undefined') ? xVal : 0.5;
         const sy = (typeof yVal !== 'undefined') ? yVal : 0.5;
-        const inBL = (sx < 0.5 && sy < 0.5);
+        const inBL = (sx <  0.5 && sy <  0.5);
+        const inBR = (sx >= 0.5 && sy <  0.5);
 
+        // BL gain + filter
         if (S.blGain && S.blFilter) {
-          // Gain: full when in BL, muted otherwise (short ramp = smooth fade in/out)
-          const targetGain = inBL ? 1.0 : 0.0;
-          S.blGain.gain.rampTo(targetGain, 0.08);
-
-          // Filter: only modulated while in BL. Local coords (lx, ly) ∈ [0,1].
-          // (0,0) BL corner → 1000 Hz, (1,1) UR corner of the BL square → ~20 kHz, log-mapped.
+          S.blGain.gain.rampTo(inBL ? 1.0 : 0.0, 0.08);
           if (inBL) {
             const lx = Math.max(0, Math.min(1, sx * 2));
             const ly = Math.max(0, Math.min(1, sy * 2));
-            const t = (lx + ly) / 2;
+            const t = (lx + ly) / 2; // 0 at BL corner → 1 at UR corner of square
             const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
             S.blFilter.frequency.rampTo(cutoff, 0.05);
+          }
+        }
+
+        // BR gain + filter (mirrored: open at upper-left of BR, 150 Hz at lower-right)
+        if (S.brGain && S.brFilter) {
+          S.brGain.gain.rampTo(inBR ? 1.0 : 0.0, 0.08);
+          if (inBR) {
+            const lx = Math.max(0, Math.min(1, (sx - 0.5) * 2));
+            const ly = Math.max(0, Math.min(1, sy * 2));
+            const t = ((1 - lx) + ly) / 2; // 0 at lower-right corner → 1 at upper-left corner of square
+            const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
+            S.brFilter.frequency.rampTo(cutoff, 0.05);
           }
         }
         return;
