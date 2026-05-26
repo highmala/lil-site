@@ -82,6 +82,27 @@
     S.brFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.brGain);
     S.brBuffer = await new Tone.ToneAudioBuffer().load(base + 'simple/samples/soothing-rain.mp3');
 
+    // ═══ UL system: Portal-style granular FX on the charlie buffer ═══
+    // FX chain: GrainPlayer → lowpass filter → feedback delay → reverb → ulGain → master
+    // Two Portal-style macros driven by XY:
+    //   X (Macro 1 - "Time/Pitch")   : detune (±700 cents) + playbackRate (0.5..1.5x)
+    //   Y (Macro 2 - "Grain Texture"): grainSize (20ms..400ms) + overlap (0.1..0.5)
+    // Plus XY-driven filter cutoff and delay feedback so movement has depth.
+    S.ulGain = new Tone.Gain(0).connect(sGain); // start muted; fades in when UL active. Routed through master.
+    S.ulReverb = new Tone.Reverb({ decay: 4.0, wet: 0.35 }).connect(S.ulGain);
+    await S.ulReverb.generate();
+    S.ulDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.35, wet: 0.3 }).connect(S.ulReverb);
+    S.ulFilter = new Tone.Filter({ frequency: 4000, type: 'lowpass', rolloff: -24, Q: 1 }).connect(S.ulDelay);
+    S.ulGrain = new Tone.GrainPlayer({
+      url: S.blBuffer, // reuse charlie buffer
+      loop: true,
+      grainSize: 0.15,
+      overlap: 0.2,
+      detune: 0,
+      playbackRate: 1.0,
+      volume: -3
+    }).connect(S.ulFilter);
+
     // UL: placeholder (waiting on samples)
 
     await Tone.loaded();
@@ -116,45 +137,56 @@
       urHatStep = (urHatStep + 1) % 32;
     }, '32n');
 
-    // ═══ UL system: horizontal mirror of UR, running at half tempo (55.5 BPM feel) ═══
-    // Global transport stays at 111 BPM so UR is unaffected. UL uses doubled note values
-    // (8n / 16n instead of 16n / 32n) so its clock ticks at half the rate → 55.5 BPM equivalent.
-    let ulKickStep = 0;
-    S.ulKickLoop = new Tone.Loop(time => {
+    // ═══ UL system: Portal-style granular controller (driven by xVal/yVal) ═══
+    // Runs at ~30Hz, smoothly ramps GrainPlayer + FX parameters from current XY position.
+    // Muted when not in UL via a short fade on S.ulGain.
+    S.ulGrain.start(0); // start the granular engine immediately, looping forever
+    let ulActive = false;
+    const RAMP = 0.08; // 80ms parameter smoothing
+    const lerp = (a, b, t) => a + (b - a) * t;
+    S.ulTicker = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
-      if (getActiveQuadrant(x, y) !== 'UL') { ulKickStep = (ulKickStep + 1) % 16; return; }
-      const { ly } = localCoords('UL', x, y);
-      const numHits = Math.round(ly * 15) + 1; // 1..16
-      if (isHitAtStep(ulKickStep, numHits, 16)) {
-        const replaceChance = ly * 0.75;
-        if (Math.random() < replaceChance) S.kickAlt.start(time);
-        else                                S.kick.start(time);
-      }
-      ulKickStep = (ulKickStep + 1) % 16;
-    }, '8n'); // half the UR rate → 55.5 BPM feel
+      const inUL = getActiveQuadrant(x, y) === 'UL';
 
-    let ulHatStep = 0;
-    S.ulHatLoop = new Tone.Loop(time => {
-      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
-      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
-      if (getActiveQuadrant(x, y) !== 'UL') { ulHatStep = (ulHatStep + 1) % 32; return; }
-      const { lx } = localCoords('UL', x, y);
-      // Mirror: density grows toward the LEFT edge (low lx = high density)
-      const mirroredLx = 1 - lx;
-      const numHits = Math.round(mirroredLx * 31) + 1; // 1..32
-      if (isHitAtStep(ulHatStep, numHits, 32)) {
-        S.hihat.start(time);
-      }
-      ulHatStep = (ulHatStep + 1) % 32;
-    }, '16n'); // half the UR rate → 55.5 BPM feel
+      // gate the output with a smooth fade so it doesn't click when leaving UL
+      if (inUL && !ulActive) { S.ulGain.gain.rampTo(0.9, 0.25); ulActive = true; }
+      else if (!inUL && ulActive) { S.ulGain.gain.rampTo(0, 0.25); ulActive = false; }
+      if (!inUL) return;
+
+      const { lx, ly } = localCoords('UL', x, y);
+
+      // Macro 1 (X): pitch + playback rate
+      // lx 0 → -700c + 0.5x | lx 0.5 → 0c + 1x | lx 1 → +700c + 1.5x
+      const detuneCents = (lx - 0.5) * 2 * 700;
+      const playbackRate = lerp(0.5, 1.5, lx);
+
+      // Macro 2 (Y): grain size + overlap (texture morph)
+      // ly 0 → 20ms grains, overlap 0.45 (dense glitch)
+      // ly 1 → 400ms grains, overlap 0.1  (smeared pad)
+      const grainSize = lerp(0.02, 0.4, ly);
+      const overlap = lerp(0.45, 0.1, ly);
+
+      // Bonus depth: filter opens with Y, delay feedback grows with X distance from center
+      const filterFreq = lerp(800, 8000, ly);
+      const delayFb = 0.25 + Math.abs(lx - 0.5) * 0.5; // 0.25 → 0.5
+      const delayWet = lerp(0.15, 0.45, Math.abs(lx - 0.5) * 2);
+
+      // Apply with short ramps (avoid zipper noise while dragging)
+      S.ulGrain.detune = detuneCents; // GrainPlayer detune is a plain number, not a Signal
+      S.ulGrain.playbackRate = playbackRate;
+      S.ulGrain.grainSize = grainSize;
+      S.ulGrain.overlap = overlap;
+      S.ulFilter.frequency.rampTo(filterFreq, RAMP);
+      S.ulDelay.feedback.rampTo(delayFb, RAMP);
+      S.ulDelay.wet.rampTo(delayWet, RAMP);
+    }, 0.033); // ~30Hz
 
     // ═══ BL / BR systems: handled by crossfade looper + update() filter routing ═══
 
     sLoop.start(0);
     S.hatLoop.start(0);
-    S.ulKickLoop.start(0);
-    S.ulHatLoop.start(0);
+    S.ulTicker.start(0);
 
     // ═══ Crossfade looper helper ═══
     // Spawns a fresh Tone.Player every (duration - fadeSec) seconds, each with its own
@@ -192,7 +224,7 @@
     Tone.getTransport().start();
 
     sStarted = true;
-    console.log('[sampler] simple 4-quadrant sequencer running: UR @', world.tempo.play, 'bpm | UL @', (world.tempo.play / 2).toFixed(1), 'bpm (half-speed) | BL + BR active');
+    console.log('[sampler] simple 4-quadrant sequencer running: UR drums @', world.tempo.play, 'bpm | UL granular FX (Portal-style) | BL + BR ambient active');
     return true;
   }
 
