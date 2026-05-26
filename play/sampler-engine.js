@@ -753,14 +753,15 @@
             dtParam.linearRampToValueAtTime(dly, time + TICK_SEC);
           } catch (_) {}
 
-          // Entry edge: retrigger if not currently playing.
-          if (!urActive) {
-            urActive = true;
-            if (!S.thaiBirdsPlaying) {
-              try { S.thaiBirds.stop(); } catch (_) {}
-              S.thaiBirdsPlaying = true;
-              S.thaiBirds.start(time, 0);
-            }
+          // Trigger from start whenever we're in UR and the sample isn't currently
+          // playing. Covers both the UR-entry edge AND the case where the sample
+          // ran out while we were still in UR (so birds keep cycling indefinitely
+          // until the ball leaves UR).
+          urActive = true;
+          if (!S.thaiBirdsPlaying) {
+            try { S.thaiBirds.stop(); } catch (_) {}
+            S.thaiBirdsPlaying = true;
+            S.thaiBirds.start(time, 0);
           }
         } else {
           // Outside UR: silence the gate; sample keeps playing (or finishes) in background.
