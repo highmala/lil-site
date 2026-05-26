@@ -251,10 +251,15 @@
       position: absolute;
       bottom: 4vh;
       left: calc(4vw + 72px); /* sit right of the 56px record button + a bit of gap */
-      width: 240px;
-      height: 56px;
+      width: 720px;
+      height: 168px;
+      max-width: calc(100vw - 8vw - 72px);
       display: none;
-      pointer-events: none;
+      /* Pointer events ON for the wrap so we can drag the highlight regions.
+         Outside of an active drag, the canvas itself only matters when the cursor
+         is actually over a region; pointer-events: auto here is acceptable since the
+         wrap sits in the bottom-left corner. */
+      pointer-events: auto;
       z-index: 30;
     }
     body.world-simple #waveform-wrap { display: block; }
@@ -265,7 +270,10 @@
       border: 1px solid rgba(255,255,255,0.2);
       border-radius: 4px;
       display: block;
+      cursor: default;
     }
+    #waveform-canvas.over-region { cursor: grab; }
+    #waveform-canvas.dragging    { cursor: grabbing; }
 
     /* Version */
     #version {
@@ -310,7 +318,7 @@
     <button id="mute-btn">mute</button>
     <button id="record-btn" title="Record 15s and replace samples" aria-label="Record"></button>
     <div id="record-status"></div>
-    <div id="waveform-wrap"><canvas id="waveform-canvas" width="480" height="112"></canvas></div>
+    <div id="waveform-wrap"><canvas id="waveform-canvas" width="1440" height="336"></canvas></div>
     <div id="world-selector" style="position:absolute; top:10px; right:10px; font-size:12px; opacity:0.6;">
       <a href="?world=nature" style="color:inherit; margin:0 5px;">forest</a>
       <a href="?world=vocal" style="color:inherit; margin:0 5px;">voices</a>
@@ -938,6 +946,11 @@ let isRecording = false;
   let rec = null;             // { buffer, sampleRate, chosenSlots, sliceLenSec, durationSec }
   // Per-slot flash state: { kick: { t: timestampMs }, ... } — set on play, decays in ~150ms.
   const flash = {};
+  // Drag state: { slot, grabOffsetPx, startFrame, lastFramePx }
+  let drag = null;
+  // Last-known band geometry (cssX, cssW per slot) — populated by drawWaveform so the hit
+  // test in mousedown can use the same numbers without re-deriving them.
+  let bandLayout = [];
 
   function drawWaveform() {
     fitCanvas();
@@ -984,11 +997,13 @@ let isRecording = false;
     const totalSec = N / sr;
     const sliceSec = rec.sliceLenSec || 0.2;
     const now = performance.now();
+    bandLayout = [];
     for (const cs of rec.chosenSlots) {
       const tStart = (cs.frame * cs.hop) / sr;
       const x = Math.floor((tStart / totalSec) * cssW);
-      const w = Math.max(2, Math.ceil((sliceSec / totalSec) * cssW));
+      const w = Math.max(4, Math.ceil((sliceSec / totalSec) * cssW));
       const color = SLOT_COLORS[cs.slot] || '#ffffff';
+      bandLayout.push({ slot: cs.slot, x, w });
 
       // Flash level (0..1): fades over 150ms after the latest play of this slot.
       const f = flash[cs.slot];
@@ -997,19 +1012,26 @@ let isRecording = false;
         const dt = now - f.t;
         flashLvl = Math.max(0, 1 - dt / 150);
       }
-      const baseAlpha = 0.20 + flashLvl * 0.55;
+      // Outline when this slot is being dragged so the user sees what they grabbed.
+      const isDragging = drag && drag.slot === cs.slot;
+      const baseAlpha = 0.20 + flashLvl * 0.55 + (isDragging ? 0.15 : 0);
       ctx.fillStyle = hexToRgba(color, baseAlpha);
       ctx.fillRect(x, 0, w, cssH);
-      // Top edge marker
-      ctx.fillStyle = hexToRgba(color, 0.8 + flashLvl * 0.2);
-      ctx.fillRect(x, 0, w, 2);
-
-      // Tiny label at bottom
+      // Top + bottom edge markers (wider for visibility at 3x size)
+      ctx.fillStyle = hexToRgba(color, 0.85 + flashLvl * 0.15);
+      ctx.fillRect(x, 0, w, 3);
+      ctx.fillRect(x, cssH - 3, w, 3);
+      // Drag handle hint: vertical bars at left + right edges of the band
       ctx.fillStyle = hexToRgba(color, 0.9);
-      ctx.font = '8px ComicSans, "Comic Sans MS", cursive';
-      ctx.textBaseline = 'bottom';
+      ctx.fillRect(x, 3, 2, cssH - 6);
+      ctx.fillRect(x + w - 2, 3, 2, cssH - 6);
+
+      // Slot label (now legible at 3x size)
+      ctx.fillStyle = hexToRgba(color, 0.95);
+      ctx.font = 'bold 13px ComicSans, "Comic Sans MS", cursive';
+      ctx.textBaseline = 'top';
       ctx.textAlign = 'left';
-      ctx.fillText(cs.slot, x + 2, cssH - 2);
+      ctx.fillText(cs.slot, x + 5, 6);
     }
   }
 
@@ -1038,6 +1060,91 @@ let isRecording = false;
     animActive = true;
     requestAnimationFrame(tick);
   }
+
+  // ─── Drag handling: pick up a colored band and slide it to a different position ───
+  function canvasPointFromEvent(ev) {
+    const r = canvas.getBoundingClientRect();
+    const x = (ev.clientX !== undefined ? ev.clientX : (ev.touches && ev.touches[0] && ev.touches[0].clientX)) - r.left;
+    const y = (ev.clientY !== undefined ? ev.clientY : (ev.touches && ev.touches[0] && ev.touches[0].clientY)) - r.top;
+    return { x, y };
+  }
+
+  function hitTestBand(px) {
+    // Returns the layout entry under the x coordinate (CSS px), or null. If multiple
+    // bands overlap at this point, prefer the one whose center is closest — makes
+    // dragging stacked bands more predictable.
+    let best = null, bestDist = Infinity;
+    for (const b of bandLayout) {
+      if (px >= b.x && px <= b.x + b.w) {
+        const d = Math.abs(px - (b.x + b.w / 2));
+        if (d < bestDist) { bestDist = d; best = b; }
+      }
+    }
+    return best;
+  }
+
+  function onPointerMove(ev) {
+    const p = canvasPointFromEvent(ev);
+    if (drag) {
+      // Move the band so its left edge follows (cursor.x - grabOffset).
+      const cssW = parseFloat(canvas.style.width);
+      const newX = Math.max(0, Math.min(cssW - drag.bandW, p.x - drag.grabOffset));
+      // Map back to frame index via recording timeline.
+      if (rec && rec.buffer) {
+        const totalSec = rec.buffer.length / rec.sampleRate;
+        const tStart = (newX / cssW) * totalSec;
+        const hop = (rec.chosenSlots[0] && rec.chosenSlots[0].hop) || 1;
+        const frame = Math.floor((tStart * rec.sampleRate) / hop);
+        // Update the in-memory chosenSlot entry so the redraw shows the new position.
+        const entry = rec.chosenSlots.find(c => c.slot === drag.slot);
+        if (entry) entry.frame = frame;
+        drag.pendingFrame = frame;
+      }
+      drawWaveform();
+      ev.preventDefault();
+    } else {
+      // Hover feedback only.
+      const hit = hitTestBand(p.x);
+      canvas.classList.toggle('over-region', !!hit);
+    }
+  }
+
+  async function onPointerUp(ev) {
+    if (!drag) return;
+    const slot = drag.slot;
+    const frame = drag.pendingFrame;
+    drag = null;
+    canvas.classList.remove('dragging');
+    drawWaveform();
+    // Commit the new slice into the engine so it actually plays from the new position.
+    if (frame != null && window._samplerEngine && typeof window._samplerEngine.replaceSliceForSlot === 'function') {
+      try { await window._samplerEngine.replaceSliceForSlot(slot, frame); }
+      catch (e) { console.warn('[waveform] replaceSliceForSlot failed:', e); }
+    }
+  }
+
+  function onPointerDown(ev) {
+    if (!rec || !rec.buffer) return;
+    const p = canvasPointFromEvent(ev);
+    const hit = hitTestBand(p.x);
+    if (!hit) return;
+    drag = {
+      slot: hit.slot,
+      bandW: hit.w,
+      grabOffset: p.x - hit.x,  // so the band moves under the cursor consistently
+      pendingFrame: null
+    };
+    canvas.classList.add('dragging');
+    ev.preventDefault();
+  }
+
+  canvas.addEventListener('mousedown', onPointerDown);
+  window.addEventListener('mousemove', onPointerMove);
+  window.addEventListener('mouseup', onPointerUp);
+  // Touch support
+  canvas.addEventListener('touchstart', onPointerDown, { passive: false });
+  window.addEventListener('touchmove', onPointerMove, { passive: false });
+  window.addEventListener('touchend', onPointerUp);
 
   function attachToEngine() {
     const eng = window._samplerEngine;

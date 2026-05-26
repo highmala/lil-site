@@ -70,6 +70,123 @@
     return { lx: Math.max(0, Math.min(1, lx)), ly: Math.max(0, Math.min(1, ly)) };
   }
 
+
+  // ═══ Slice extraction + slot swap (shared by recordAndReplaceSamples & replaceSliceForSlot) ═══
+  // Pulls a 200ms window starting at `frame*hop` from the recording buffer, peak-normalizes
+  // it to ~-1 dBFS, applies a 5ms fade-out, and returns a Tone.ToneAudioBuffer.
+  function extractAndPrepareSlice(buffer, frame, hop, sampleRate) {
+    const SLICE_LEN_SEC = 0.2;
+    const PREROLL_SEC = 0.003;
+    const FADE_SEC = 0.005;
+    const NORMALIZE_PEAK = 0.89;   // ~-1 dBFS
+    const SILENCE_THRESHOLD = 0.001;
+
+    const sliceLenSamples = Math.floor(sampleRate * SLICE_LEN_SEC);
+    const preRollSamples = Math.floor(sampleRate * PREROLL_SEC);
+    let start = frame * hop - preRollSamples;
+    if (start < 0) start = 0;
+    if (start + sliceLenSamples > buffer.length) start = buffer.length - sliceLenSamples;
+    if (start < 0) start = 0;
+    const end = Math.min(start + sliceLenSamples, buffer.length);
+    const slice = buffer.slice(start, end);
+
+    // Peak normalize
+    let peak = 0;
+    for (let i = 0; i < slice.length; i++) {
+      const a = Math.abs(slice[i]);
+      if (a > peak) peak = a;
+    }
+    if (peak > SILENCE_THRESHOLD) {
+      const g = NORMALIZE_PEAK / peak;
+      for (let i = 0; i < slice.length; i++) slice[i] *= g;
+    }
+
+    // 5ms fade-out to avoid clicks
+    const fadeSamples = Math.min(slice.length, Math.floor(sampleRate * FADE_SEC));
+    for (let i = 0; i < fadeSamples; i++) {
+      const idx = slice.length - fadeSamples + i;
+      slice[idx] *= (1 - i / fadeSamples);
+    }
+
+    const toneCtx = Tone.getContext().rawContext;
+    const ab = toneCtx.createBuffer(1, slice.length, sampleRate);
+    ab.getChannelData(0).set(slice);
+    return new Tone.ToneAudioBuffer(ab);
+  }
+
+  // Swaps the player(s) for a given slot to a new Tone.ToneAudioBuffer. Rebuilds the UR slot
+  // and (for non-snare slots) also the UL twin + reversed chaos variant + hihat-extras
+  // (octave-down + roll pool). Old players are disposed cleanly. Each new player is wrapped
+  // with bindSlot so play events still broadcast.
+  async function swapSlotFromBuffer(slot, toneBuf) {
+    function disposeQuietly(node) { try { if (node) node.dispose(); } catch (_) {} }
+
+    // UR slot
+    const urPlayer = new Tone.Player(toneBuf);
+    if (slot === 'snare' && S.snareWetSend) {
+      urPlayer.fan(sGain, S.snareWetSend);
+      urPlayer.volume.value = -4;
+    } else {
+      urPlayer.connect(sGain);
+      urPlayer.volume.value = -5;
+    }
+    await Tone.loaded();
+    disposeQuietly(S[slot]);
+    S[slot] = urPlayer;
+    bindSlot(urPlayer, slot);
+    if (slot === 'snare') S.snareReady = true;
+
+    // UL twin + chaos variants (no UL snare — snare is shared)
+    if (slot === 'snare') return;
+
+    const ulSlot = 'ul' + slot.charAt(0).toUpperCase() + slot.slice(1);
+    if (S.ulSendBus) {
+      const ulPlayer = new Tone.Player(toneBuf);
+      ulPlayer.volume.value = -5;
+      ulPlayer.fan(sGain, S.ulSendBus);
+      disposeQuietly(S[ulSlot]);
+      S[ulSlot] = ulPlayer;
+      bindSlot(ulPlayer, slot);
+
+      const reverseSlot = ulSlot + 'Reverse';
+      if (S[reverseSlot]) {
+        const revBuf = toneBuf.slice(0); // clone
+        revBuf.reverse = true;
+        const revPlayer = new Tone.Player(revBuf);
+        revPlayer.volume.value = -5;
+        revPlayer.fan(sGain, S.ulSendBus);
+        disposeQuietly(S[reverseSlot]);
+        S[reverseSlot] = revPlayer;
+        bindSlot(revPlayer, slot);
+      }
+
+      if (slot === 'hihat') {
+        if (S.ulHihatLow) {
+          const low = new Tone.Player(toneBuf);
+          low.playbackRate = 0.5;
+          low.volume.value = -5;
+          low.fan(sGain, S.ulSendBus);
+          disposeQuietly(S.ulHihatLow);
+          S.ulHihatLow = low;
+          bindSlot(low, 'hihat');
+        }
+        if (S.ulHihatRollPool && S.ulHihatRollPool.length) {
+          const poolSize = S.ulHihatRollPool.length;
+          for (const p of S.ulHihatRollPool) disposeQuietly(p);
+          S.ulHihatRollPool = [];
+          for (let j = 0; j < poolSize; j++) {
+            const rp = new Tone.Player(toneBuf);
+            rp.volume.value = -5;
+            rp.fan(sGain, S.ulSendBus);
+            bindSlot(rp, 'hihat');
+            S.ulHihatRollPool.push(rp);
+          }
+        }
+      }
+    }
+    await Tone.loaded();
+  }
+
   async function initSimple1(worldName) {
     console.log('[sampler] init SIMPLE1 world (4-quadrant)');
 
@@ -1285,6 +1402,28 @@
   }
 
   window._samplerEngine = {
+    // Move a slot's slice to a different frame in the most recent recording.
+    // Used by the draggable waveform overlay so users can hand-pick which 200ms window
+    // each drum slot uses (vs the algorithmic strongest-transient pick).
+    replaceSliceForSlot: async function(slot, frame) {
+      const rec = window._samplerEngine.lastRecording;
+      if (!rec || !rec.buffer) return false;
+      const validSlots = ['snare', 'kick', 'kickAlt', 'hihat'];
+      if (!validSlots.includes(slot)) return false;
+      // Clamp frame so the slice stays inside the buffer.
+      const hop = (rec.chosenSlots && rec.chosenSlots[0] && rec.chosenSlots[0].hop) || 1;
+      const sliceLenSamples = Math.floor(rec.sampleRate * (rec.sliceLenSec || 0.2));
+      const maxFrame = Math.max(0, Math.floor((rec.buffer.length - sliceLenSamples) / hop));
+      const clampedFrame = Math.max(0, Math.min(maxFrame, Math.floor(frame)));
+      const toneBuf = extractAndPrepareSlice(rec.buffer, clampedFrame, hop, rec.sampleRate);
+      await swapSlotFromBuffer(slot, toneBuf);
+      // Update the recording's chosenSlots so the UI redraw reflects the new position.
+      const entry = rec.chosenSlots.find(c => c.slot === slot);
+      if (entry) entry.frame = clampedFrame;
+      else rec.chosenSlots.push({ frame: clampedFrame, hop, strength: 0, slot });
+      return true;
+    },
+
     start: async function() {
       const p = new URLSearchParams(window.location.search).get('world');
       if (!p) return false;
@@ -1536,139 +1675,20 @@
         throw new Error('Not enough transients (' + chosen.length + ')');
       }
 
-      // 4. Slice 0.2s windows; apply tiny pre-roll (3ms) so attack isn't cut.
-      //    Then peak-normalize each slice to ~-1 dBFS so recorded hits sit at the same
-      //    perceived level as the baked-in BL (charlie) / BR (rain) loops — quiet mic
-      //    captures otherwise feel buried under the ambient beds.
-      const preRollSamples = Math.floor(sampleRate * 0.003);
-      const NORMALIZE_PEAK = 0.89; // ~-1 dBFS, headroom to avoid intersample clipping
-      const SILENCE_THRESHOLD = 0.001; // ~-60 dBFS; below this we leave the slice alone
-      const slices = chosen.map(c => {
-        let start = c.frame * hop - preRollSamples;
-        if (start < 0) start = 0;
-        const end = Math.min(start + sliceLenSamples, captureBuf.length);
-        const slice = captureBuf.slice(start, end);
+      // 4. (Extraction + normalization happens inside extractAndPrepareSlice now.)
+      //    We just pass each chosen frame to that helper below.
 
-        // Peak-normalize: find max abs sample, scale the whole slice so that peak hits
-        // NORMALIZE_PEAK. Skip if the slice is effectively silent.
-        let peak = 0;
-        for (let i = 0; i < slice.length; i++) {
-          const a = Math.abs(slice[i]);
-          if (a > peak) peak = a;
-        }
-        if (peak > SILENCE_THRESHOLD) {
-          const gain = NORMALIZE_PEAK / peak;
-          for (let i = 0; i < slice.length; i++) slice[i] *= gain;
-        }
-
-        // Small fade-out (last 5ms) to avoid clicks. Applied AFTER normalize so the fade
-        // envelope rides on the normalized waveform (peak still respects NORMALIZE_PEAK).
-        const fadeSamples = Math.min(slice.length, Math.floor(sampleRate * 0.005));
-        for (let i = 0; i < fadeSamples; i++) {
-          const idx = slice.length - fadeSamples + i;
-          slice[idx] *= (1 - i / fadeSamples);
-        }
-        return { slice, strength: c.strength };
-      });
-
-      // 5. Build Tone audio buffers and swap into BOTH the UR slots (S.kick / S.kickAlt /
-      //    S.hihat / S.snare) AND their UL counterparts (S.ulKick / S.ulKickAlt / S.ulHihat
-      //    + chaos variants S.ulKickReverse / S.ulKickAltReverse / S.ulHihatReverse /
-      //    S.ulHihatLow / S.ulHihatRollPool). The snare lives on a shared S.snare instance
-      //    used by both squares (snare zone spans full width), so no UL snare twin needed.
-      //
+      // 5. Swap each chosen transient into its slot via the shared helper.
       //    Order in `chosen` (by descending strength):
       //      i=0 → snare (loudest — the impactful backbeat hit)
       //      i=1 → kick   (BD1)
       //      i=2 → kickAlt (BD2)
       //      i=3 → hihat  (quietest)
-
-      function disposeQuietly(node) { try { if (node) node.dispose(); } catch(_) {} }
-
-      // Build a Tone.ToneAudioBuffer wrapping a Float32 slice so we can clone-reverse it.
-      function bufferFromSlice(data) {
-        const toneCtx = Tone.getContext().rawContext;
-        const ab = toneCtx.createBuffer(1, data.length, sampleRate);
-        ab.getChannelData(0).set(data);
-        return new Tone.ToneAudioBuffer(ab);
-      }
-
       const labels = ['snare', 'kick', 'kickAlt', 'hihat'];
-      const count = Math.min(slices.length, 4);
+      const count = Math.min(chosen.length, 4);
       for (let i = 0; i < count; i++) {
-        const data = slices[i].slice;
-        const toneBuf = bufferFromSlice(data);
-        const slot = labels[i];
-
-        // ─── UR slot (the existing behavior) ───
-        const urPlayer = new Tone.Player(toneBuf);
-        if (slot === 'snare' && S.snareWetSend) {
-          urPlayer.fan(sGain, S.snareWetSend);
-          urPlayer.volume.value = -4;
-        } else {
-          urPlayer.connect(sGain);
-          urPlayer.volume.value = -5;
-        }
-        await Tone.loaded();
-        disposeQuietly(S[slot]);
-        S[slot] = urPlayer;
-        bindSlot(urPlayer, slot);
-        if (slot === 'snare') S.snareReady = true;
-
-        // ─── UL twin + chaos variants (no UL snare — snare is shared) ───
-        if (slot === 'snare') continue;
-
-        const ulSlot = 'ul' + slot.charAt(0).toUpperCase() + slot.slice(1); // ulKick / ulKickAlt / ulHihat
-        if (S.ulSendBus) {
-          // Fresh UL player on the new buffer, fanned to dry + Portal FX send.
-          const ulPlayer = new Tone.Player(toneBuf);
-          ulPlayer.volume.value = -5;
-          ulPlayer.fan(sGain, S.ulSendBus);
-          disposeQuietly(S[ulSlot]);
-          S[ulSlot] = ulPlayer;
-          bindSlot(ulPlayer, slot);
-
-          // Reversed chaos variant (cloned buffer with reverse=true).
-          // Slot names: ulHihatReverse / ulKickReverse / ulKickAltReverse
-          const reverseSlot = ulSlot + 'Reverse';
-          if (S[reverseSlot]) {
-            const revBuf = toneBuf.slice(0); // clone
-            revBuf.reverse = true;
-            const revPlayer = new Tone.Player(revBuf);
-            revPlayer.volume.value = -5;
-            revPlayer.fan(sGain, S.ulSendBus);
-            disposeQuietly(S[reverseSlot]);
-            S[reverseSlot] = revPlayer;
-            bindSlot(revPlayer, slot);
-          }
-
-          // Hihat-only extras: octave-down player + 4-voice roll pool.
-          if (slot === 'hihat') {
-            if (S.ulHihatLow) {
-              const low = new Tone.Player(toneBuf);
-              low.playbackRate = 0.5;
-              low.volume.value = -5;
-              low.fan(sGain, S.ulSendBus);
-              disposeQuietly(S.ulHihatLow);
-              S.ulHihatLow = low;
-              bindSlot(low, 'hihat');
-            }
-            if (S.ulHihatRollPool && S.ulHihatRollPool.length) {
-              const poolSize = S.ulHihatRollPool.length;
-              for (const p of S.ulHihatRollPool) disposeQuietly(p);
-              S.ulHihatRollPool = [];
-              for (let j = 0; j < poolSize; j++) {
-                const rp = new Tone.Player(toneBuf);
-                rp.volume.value = -5;
-                rp.fan(sGain, S.ulSendBus);
-                bindSlot(rp, 'hihat');
-                S.ulHihatRollPool.push(rp);
-              }
-            }
-          }
-        }
-
-        await Tone.loaded();
+        const toneBuf = extractAndPrepareSlice(captureBuf, chosen[i].frame, hop, sampleRate);
+        await swapSlotFromBuffer(labels[i], toneBuf);
       }
 
       const replaced = labels.slice(0, count).join(' / ');
