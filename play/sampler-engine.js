@@ -457,6 +457,52 @@
       S.ulHihatRollPool.push(p);
     }
 
+    // ═══ Snare zone (horizontal stripe, Simple2 only) ═══
+    // Pointer y ∈ [0.60, 0.72]: when inside this band, drum sequencers get a 25%
+    // backbeat-snare chance. Spans full width (both UL + UR feed it).
+    // TR-808Snare07 routed dry + parallel heavy reverb send (50% per-hit chance).
+    const SNARE_Y_LO = 0.60;
+    const SNARE_Y_HI = 0.72;
+    function inSnareZone(y) { return y >= SNARE_Y_LO && y <= SNARE_Y_HI; }
+
+    // Heavy reverb on a parallel bus; the snare fans into both dry (sGain) and wet (this bus).
+    S.snareReverb = new Tone.Reverb({ decay: 6.0, wet: 1.0, preDelay: 0.02 }).connect(sGain);
+    await S.snareReverb.generate();
+    // Wet-send gain: toggled 0 or 1 right before each snare hit to gate the reverb tail in/out.
+    S.snareWetSend = new Tone.Gain(0).connect(S.snareReverb);
+
+    // Snare player. Pre-flight HEAD to detect whether TR-808Snare07.wav is deployed yet;
+    // if 404, skip loading so the engine doesn't hang on a missing buffer.
+    S.snareReady = false;
+    const snareUrl = base + 'simple/samples/TR-808Snare07.wav';
+    try {
+      const head = await fetch(snareUrl, { method: 'HEAD' });
+      if (head.ok) {
+        S.snare = new Tone.Player(snareUrl);
+        S.snare.volume.value = -4;
+        S.snare.fan(sGain, S.snareWetSend);
+        // Tone.loaded() resolves when all in-flight buffers are ready.
+        await Tone.loaded();
+        S.snareReady = true;
+        console.log('[sampler] TR-808Snare07 loaded.');
+      } else {
+        console.warn('[sampler] TR-808Snare07.wav not deployed (HTTP', head.status, '). Snare zone will be silent until you drop the file at play/worlds/simple/samples/TR-808Snare07.wav.');
+      }
+    } catch (e) {
+      console.warn('[sampler] TR-808Snare07.wav probe failed; snare zone disabled. Error:', e);
+    }
+
+    function fireSnare(time) {
+      if (!S.snareReady || !S.snare) return;
+      // 50% chance: also open the wet reverb send for this hit.
+      const withReverb = Math.random() < 0.5;
+      S.snareWetSend.gain.cancelScheduledValues(time);
+      S.snareWetSend.gain.setValueAtTime(withReverb ? 1.0 : 0.0, time);
+      // Close the send shortly after so subsequent hits don't bleed; reverb tail still rings.
+      S.snareWetSend.gain.setValueAtTime(0.0, time + 0.4);
+      S.snare.start(time);
+    }
+
     await Tone.loaded();
     console.log('[sampler] simple samples loaded');
 
@@ -472,6 +518,10 @@
         const replaceChance = ly * 0.75;
         if (Math.random() < replaceChance) S.kickAlt.start(time);
         else                                S.kick.start(time);
+      }
+      // Backbeat snare (steps 4 and 12 in a 16-step 16n bar): 25% in the snare zone.
+      if ((urKickStep === 4 || urKickStep === 12) && inSnareZone(y) && Math.random() < 0.25) {
+        fireSnare(time);
       }
       urKickStep = (urKickStep + 1) % 16;
     }, '16n');
@@ -522,6 +572,11 @@
           if (pickAlt) S.ulKickAlt.start(time);
           else         S.ulKick.start(time);
         }
+      }
+      // Backbeat snare (steps 4 and 12 in UL's 16-step 8n bar): 25% in the snare zone.
+      // Same stripe spans UL too — fires at UL's half-time backbeat positions.
+      if ((ulKickStep === 4 || ulKickStep === 12) && inSnareZone(y) && Math.random() < 0.25) {
+        fireSnare(time);
       }
       ulKickStep = (ulKickStep + 1) % 16;
     }, '8n'); // half the UR rate → 55.5 BPM feel
@@ -1230,7 +1285,7 @@
           if (startSample + sliceLenSamples > captureBuf.length) continue;
           chosen.push(c);
         }
-        if (chosen.length >= 3) break;
+        if (chosen.length >= 4) break;
       }
 
       if (chosen.length < 3) {
@@ -1254,26 +1309,39 @@
         return { slice, strength: c.strength };
       });
 
-      // 5. Build Tone audio buffers and swap into S.kick / S.kickAlt / S.hihat
-      // Strongest → kick, 2nd → kickAlt, 3rd → hihat
-      const labels = ['kick', 'kickAlt', 'hihat'];
-      for (let i = 0; i < 3; i++) {
+      // 5. Build Tone audio buffers and swap into S.kick / S.kickAlt / S.hihat / S.snare
+      //    Strongest → kick, 2nd → kickAlt, 3rd → hihat, 4th → snare (Simple2 only).
+      //    The snare slot is wired to fan to (sGain, S.snareWetSend) to keep the parallel
+      //    reverb send working. If S.snareWetSend doesn't exist (Simple world), we just fan
+      //    to sGain.
+      const labels = ['kick', 'kickAlt', 'hihat', 'snare'];
+      const count = Math.min(slices.length, 4);
+      for (let i = 0; i < count; i++) {
         const data = slices[i].slice;
         // Create AudioBuffer in Tone's context
         const toneCtx = Tone.getContext().rawContext;
         const ab = toneCtx.createBuffer(1, data.length, sampleRate);
         ab.getChannelData(0).set(data);
 
-        const newPlayer = new Tone.Player(ab).connect(sGain);
-        newPlayer.volume.value = -5; // match UR drum balance
+        const slot = labels[i];
+        const newPlayer = new Tone.Player(ab);
+        // Wire the new player exactly like the original for that slot.
+        if (slot === 'snare' && S.snareWetSend) {
+          newPlayer.fan(sGain, S.snareWetSend);
+          newPlayer.volume.value = -4;
+        } else {
+          newPlayer.connect(sGain);
+          newPlayer.volume.value = -5; // match UR drum balance
+        }
         await Tone.loaded();
 
-        const slot = labels[i];
         try { if (S[slot]) S[slot].dispose(); } catch(_) {}
         S[slot] = newPlayer;
+        if (slot === 'snare') S.snareReady = true;
       }
 
-      report({ state: 'done', message: 'Replaced kick / kickAlt / hihat with 3 recorded transients.' });
+      const replaced = labels.slice(0, count).join(' / ');
+      report({ state: 'done', message: 'Replaced ' + replaced + ' with ' + count + ' recorded transients.' });
       return true;
     }
   };
