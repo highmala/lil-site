@@ -116,9 +116,9 @@
       urHatStep = (urHatStep + 1) % 32;
     }, '32n');
 
-    // ═══ UL system: horizontal mirror of UR ═══
-    // Kick density (Y, same as UR) + hihat density (X, mirrored: density grows toward LEFT edge).
-    // Uses its own independent step counters so leaving UL doesn't reset UR phase.
+    // ═══ UL system: horizontal mirror of UR, running at half tempo (55.5 BPM feel) ═══
+    // Global transport stays at 111 BPM so UR is unaffected. UL uses doubled note values
+    // (8n / 16n instead of 16n / 32n) so its clock ticks at half the rate → 55.5 BPM equivalent.
     let ulKickStep = 0;
     S.ulKickLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
@@ -132,7 +132,7 @@
         else                                S.kick.start(time);
       }
       ulKickStep = (ulKickStep + 1) % 16;
-    }, '16n');
+    }, '8n'); // half the UR rate → 55.5 BPM feel
 
     let ulHatStep = 0;
     S.ulHatLoop = new Tone.Loop(time => {
@@ -147,7 +147,7 @@
         S.hihat.start(time);
       }
       ulHatStep = (ulHatStep + 1) % 32;
-    }, '32n');
+    }, '16n'); // half the UR rate → 55.5 BPM feel
 
     // ═══ BL / BR systems: handled by crossfade looper + update() filter routing ═══
 
@@ -192,7 +192,7 @@
     Tone.getTransport().start();
 
     sStarted = true;
-    console.log('[sampler] simple 4-quadrant sequencer running at', world.tempo.play, 'bpm (UR + UL + BL + BR active)');
+    console.log('[sampler] simple 4-quadrant sequencer running: UR @', world.tempo.play, 'bpm | UL @', (world.tempo.play / 2).toFixed(1), 'bpm (half-speed) | BL + BR active');
     return true;
   }
 
