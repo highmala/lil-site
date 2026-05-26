@@ -50,6 +50,94 @@
     return { lx: Math.max(0, Math.min(1, lx)), ly: Math.max(0, Math.min(1, ly)) };
   }
 
+  // ═══ DEFAULT CONFIG ═══
+  // Every tweakable param for the Simple-family worlds lives here.
+  // Each world's JSON may override any subset of these via its `config` block;
+  // deep-merge happens at init. To diverge two worlds, edit the JSON deltas —
+  // do NOT change these defaults if you only want one world to change.
+  const DEFAULT_SIMPLE_CONFIG = {
+    samples: {
+      kick:    'simple/samples/kick.wav',
+      kickAlt: 'simple/samples/kick-alt.wav',
+      hihat:   'simple/samples/hihat.wav',
+      blLoop:  'simple/samples/charlie.mp3',
+      brLoop:  'simple/samples/soothing-rain.mp3'
+    },
+    drums: {
+      // per-player volume in dB; applies to both UR and UL drum players.
+      kickVolDb: -5, kickAltVolDb: -5, hihatVolDb: -5
+    },
+    ur: {
+      kick: { steps: 16, noteDur: '16n', maxHits: 16, kickAltSwapMaxProb: 0.75 },
+      hat:  { steps: 32, noteDur: '32n', maxHits: 32 }
+    },
+    ul: {
+      // half-speed by default (UL note durations = 2x UR's)
+      kick: { steps: 16, noteDur: '8n',  maxHits: 16, kickAltSwapMaxProb: 0.75 },
+      hat:  { steps: 32, noteDur: '16n', maxHits: 32 },
+      // corner-chaos system (opt-in per world)
+      chaos: {
+        enabled: false,
+        // which UL corner is the chaos peak. supported: 'TL', 'TR', 'BL', 'BR'
+        corner: 'TL',
+        // probabilities AT the peak corner; scale linearly to 0 at opposite corner
+        hat:  { reverse: 0.50, octaveDown: 0.20, roll: 0.10, rollHits: 4 },
+        kick: { reverse: 0.33 }
+      },
+      // Portal-style FX send chain on UL
+      fx: {
+        send: { min: 0.25, max: 1.0 }, // scales with distance from UL center
+        pitch: { semis: 12 },           // ±semis at L/R edges of UL
+        delay: {
+          centerSec: 0.375,             // delay time at lx=0.5
+          edgeSec:   0.09375,           // delay time at lx=0 or lx=1
+          feedback:  { min: 0.3, max: 0.7 }, // scaled by ly
+          initialFb: 0.4,
+          initialWet: 1.0,
+          initialTime: '8n.'
+        },
+        filter: {
+          freq: { min: 800, max: 9000 }, // lowpass cutoff, scaled by ly
+          initialFreq: 4000, rolloff: -24, Q: 1
+        },
+        reverb: { decay: 4.0, wet: { min: 0.2, max: 0.6 }, initialWet: 0.35 },
+        pitchShift: {
+          windowSize: { min: 0.03, max: 0.2 }, // grain length, scaled by ly
+          initialWindow: 0.1
+        },
+        rampSec: 0.08 // parameter smoothing
+      }
+    },
+    bl: {
+      // 2D audibility rectangle (x,y in 0..1 global coords) and filter range
+      rect:   { x0: 0.0, x1: 0.66, y0: 0.0, y1: 0.68 },
+      filter: { minHz: 150, maxHz: 20000, type: 'lowpass', rolloff: -96 },
+      looper: { fadeSec: 10, volumeDb: 5 }
+    },
+    br: {
+      rect:   { x0: 0.37, x1: 1.0, y0: 0.0, y1: 0.68 },
+      filter: { minHz: 150, maxHz: 20000, type: 'lowpass', rolloff: -96 },
+      looper: { fadeSec: 10, volumeDb: -6 }
+    },
+    // BL/BR crossfade and top-edge fade
+    blBr: {
+      overlapX: { left: 0.37, right: 0.66 },
+      yCap: 0.68,
+      yFade: 0.05
+    }
+  };
+
+  function deepMerge(target, source) {
+    if (source === null || source === undefined) return target;
+    if (Array.isArray(source)) return source.slice();
+    if (typeof source !== 'object') return source;
+    const out = (target && typeof target === 'object' && !Array.isArray(target)) ? Object.assign({}, target) : {};
+    for (const k of Object.keys(source)) {
+      out[k] = deepMerge(out[k], source[k]);
+    }
+    return out;
+  }
+
   async function initSimple(worldName) {
     console.log('[sampler] init SIMPLE world (4-quadrant)');
 
@@ -58,29 +146,34 @@
     world = await resp.json();
     console.log('[sampler] world loaded:', world.meta.name);
 
+    // Deep-merge world.config (world deltas) on top of engine defaults.
+    // World JSON's `config` block is the single source of per-world tweaks.
+    const cfg = deepMerge(DEFAULT_SIMPLE_CONFIG, world.config || {});
+    world._cfg = cfg; // stash for update() to use
+    console.log('[sampler] world cfg merged. ul.chaos.enabled =', cfg.ul.chaos.enabled);
+
     // Minimal chain: master gain → destination (no FX)
     sGain = new Tone.Gain(world.mix.master).toDestination();
 
     const base = '/play/worlds/';
 
     // UR samples (the original Simple system: 2 kicks + hihat)
-    // -5 dB on each to balance against BL sample level
-    S.kick    = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
-    S.kickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav').connect(sGain);
-    S.hihat   = new Tone.Player(base + 'simple/samples/hihat.wav').connect(sGain);
-    S.kick.volume.value    = -5;
-    S.kickAlt.volume.value = -5;
-    S.hihat.volume.value   = -5;
+    S.kick    = new Tone.Player(base + cfg.samples.kick).connect(sGain);
+    S.kickAlt = new Tone.Player(base + cfg.samples.kickAlt).connect(sGain);
+    S.hihat   = new Tone.Player(base + cfg.samples.hihat).connect(sGain);
+    S.kick.volume.value    = cfg.drums.kickVolDb;
+    S.kickAlt.volume.value = cfg.drums.kickAltVolDb;
+    S.hihat.volume.value   = cfg.drums.hihatVolDb;
 
-    // BL system: "charlie" with 10s crossfade loop → lowpass filter → gain → master
+    // BL system: charlie loop → lowpass filter → gain → master
     S.blGain   = new Tone.Gain(0).connect(sGain);
-    S.blFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.blGain);
-    S.blBuffer = await new Tone.ToneAudioBuffer().load(base + 'simple/samples/charlie.mp3');
+    S.blFilter = new Tone.Filter({ frequency: cfg.bl.filter.minHz, type: cfg.bl.filter.type, rolloff: cfg.bl.filter.rolloff }).connect(S.blGain);
+    S.blBuffer = await new Tone.ToneAudioBuffer().load(base + cfg.samples.blLoop);
 
-    // BR system: "soothing rain" with 10s crossfade loop → mirrored filter → gain → master
+    // BR system: rain loop → mirrored filter → gain → master
     S.brGain   = new Tone.Gain(0).connect(sGain);
-    S.brFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.brGain);
-    S.brBuffer = await new Tone.ToneAudioBuffer().load(base + 'simple/samples/soothing-rain.mp3');
+    S.brFilter = new Tone.Filter({ frequency: cfg.br.filter.minHz, type: cfg.br.filter.type, rolloff: cfg.br.filter.rolloff }).connect(S.brGain);
+    S.brBuffer = await new Tone.ToneAudioBuffer().load(base + cfg.samples.brLoop);
 
     // ═══ UL system: half-tempo drum mirror, with Portal-style granular send FX ═══
     // Architecture: dedicated UL drum players → (dry to master) + (tap into ulSendBus → Portal FX → master).
@@ -96,121 +189,129 @@
     // Send amount also follows distance from UL center (more FX at the edges, dry near center).
 
     // FX return chain (built bottom-up so each node knows its destination)
+    const fxCfg = cfg.ul.fx;
     S.ulFxGain = new Tone.Gain(1.0).connect(sGain);
-    S.ulReverb = new Tone.Reverb({ decay: 4.0, wet: 0.35 }).connect(S.ulFxGain);
+    S.ulReverb = new Tone.Reverb({ decay: fxCfg.reverb.decay, wet: fxCfg.reverb.initialWet }).connect(S.ulFxGain);
     await S.ulReverb.generate();
-    S.ulDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.4, wet: 1.0 }).connect(S.ulReverb);
-    S.ulFilter = new Tone.Filter({ frequency: 4000, type: 'lowpass', rolloff: -24, Q: 1 }).connect(S.ulDelay);
+    S.ulDelay = new Tone.FeedbackDelay({ delayTime: fxCfg.delay.initialTime, feedback: fxCfg.delay.initialFb, wet: fxCfg.delay.initialWet }).connect(S.ulReverb);
+    S.ulFilter = new Tone.Filter({ frequency: fxCfg.filter.initialFreq, type: 'lowpass', rolloff: fxCfg.filter.rolloff, Q: fxCfg.filter.Q }).connect(S.ulDelay);
     // PitchShift in Tone.js uses an internal granular pitch shifter — windowSize IS the grain length.
-    S.ulPitchShift = new Tone.PitchShift({ pitch: 0, windowSize: 0.1, feedback: 0.0, delayTime: 0, wet: 1.0 }).connect(S.ulFilter);
+    S.ulPitchShift = new Tone.PitchShift({ pitch: 0, windowSize: fxCfg.pitchShift.initialWindow, feedback: 0.0, delayTime: 0, wet: 1.0 }).connect(S.ulFilter);
     // The send bus: drums tap into this; it feeds the FX chain head.
     S.ulSendBus = new Tone.Gain(0).connect(S.ulPitchShift); // start with send closed; fades open in UL
 
     // Dedicated UL drum players (separate from UR's, so UR stays dry).
     // Each connects to BOTH master (dry) AND the send bus (wet via FX).
-    S.ulKick    = new Tone.Player(base + 'simple/samples/kick.wav');
-    S.ulKickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav');
-    S.ulHihat   = new Tone.Player(base + 'simple/samples/hihat.wav');
-    S.ulKick.volume.value    = -5;
-    S.ulKickAlt.volume.value = -5;
-    S.ulHihat.volume.value   = -5;
+    S.ulKick    = new Tone.Player(base + cfg.samples.kick);
+    S.ulKickAlt = new Tone.Player(base + cfg.samples.kickAlt);
+    S.ulHihat   = new Tone.Player(base + cfg.samples.hihat);
+    S.ulKick.volume.value    = cfg.drums.kickVolDb;
+    S.ulKickAlt.volume.value = cfg.drums.kickAltVolDb;
+    S.ulHihat.volume.value   = cfg.drums.hihatVolDb;
     // fan-out: dry path + send tap
     S.ulKick.fan(sGain, S.ulSendBus);
     S.ulKickAlt.fan(sGain, S.ulSendBus);
     S.ulHihat.fan(sGain, S.ulSendBus);
 
-    // ═══ UL corner variants ═══
-    // Build reversed and pitched variants for the corner-chaos probabilities.
-    // Buffers are reused; reverse=true on a cloned ToneAudioBuffer gives a backward player.
+    // ═══ UL corner variants (only built when chaos is enabled) ═══
     await Tone.loaded(); // ensure raw buffers are ready before cloning
 
-    function reversedPlayer(srcBuffer, volumeDb) {
-      const buf = srcBuffer.slice(0); // clone
-      buf.reverse = true;
-      const p = new Tone.Player(buf);
-      p.volume.value = volumeDb;
-      p.fan(sGain, S.ulSendBus);
-      return p;
-    }
+    if (cfg.ul.chaos.enabled) {
+      function reversedPlayer(srcBuffer, volumeDb) {
+        const buf = srcBuffer.slice(0); // clone
+        buf.reverse = true;
+        const p = new Tone.Player(buf);
+        p.volume.value = volumeDb;
+        p.fan(sGain, S.ulSendBus);
+        return p;
+      }
 
-    S.ulHihatReverse  = reversedPlayer(S.ulHihat.buffer, -5);
-    S.ulKickReverse   = reversedPlayer(S.ulKick.buffer, -5);
-    S.ulKickAltReverse= reversedPlayer(S.ulKickAlt.buffer, -5);
+      S.ulHihatReverse   = reversedPlayer(S.ulHihat.buffer,    cfg.drums.hihatVolDb);
+      S.ulKickReverse    = reversedPlayer(S.ulKick.buffer,     cfg.drums.kickVolDb);
+      S.ulKickAltReverse = reversedPlayer(S.ulKickAlt.buffer,  cfg.drums.kickAltVolDb);
 
-    // Octave-down hihat: playbackRate 0.5 (one octave lower).
-    S.ulHihatLow = new Tone.Player(base + 'simple/samples/hihat.wav');
-    S.ulHihatLow.playbackRate = 0.5;
-    S.ulHihatLow.volume.value = -5;
-    S.ulHihatLow.fan(sGain, S.ulSendBus);
+      // Octave-down hihat: playbackRate 0.5.
+      S.ulHihatLow = new Tone.Player(base + cfg.samples.hihat);
+      S.ulHihatLow.playbackRate = 0.5;
+      S.ulHihatLow.volume.value = cfg.drums.hihatVolDb;
+      S.ulHihatLow.fan(sGain, S.ulSendBus);
 
-    // Roll pool: 4 separate hihat players so 4 rapid 32nd hits don't cut each other off.
-    S.ulHihatRollPool = [];
-    for (let i = 0; i < 4; i++) {
-      const p = new Tone.Player(S.ulHihat.buffer);
-      p.volume.value = -5;
-      p.fan(sGain, S.ulSendBus);
-      S.ulHihatRollPool.push(p);
+      // Roll pool: N separate hihat players so rapid hits don't cut each other off.
+      S.ulHihatRollPool = [];
+      const poolSize = cfg.ul.chaos.hat.rollHits || 4;
+      for (let i = 0; i < poolSize; i++) {
+        const p = new Tone.Player(S.ulHihat.buffer);
+        p.volume.value = cfg.drums.hihatVolDb;
+        p.fan(sGain, S.ulSendBus);
+        S.ulHihatRollPool.push(p);
+      }
     }
 
     await Tone.loaded();
     console.log('[sampler] simple samples loaded');
 
-    // ═══ UR system: kick 16n density (Y) + hihat 32n density (X) ═══
+    // ═══ UR system: density sequencers (kick on Y, hihat on X) ═══
+    const urK = cfg.ur.kick;
+    const urH = cfg.ur.hat;
     let urKickStep = 0;
     sLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
-      if (getActiveQuadrant(x, y) !== 'UR') { urKickStep = (urKickStep + 1) % 16; return; }
+      if (getActiveQuadrant(x, y) !== 'UR') { urKickStep = (urKickStep + 1) % urK.steps; return; }
       const { ly } = localCoords('UR', x, y);
-      const numHits = Math.round(ly * 15) + 1; // 1..16
-      if (isHitAtStep(urKickStep, numHits, 16)) {
-        const replaceChance = ly * 0.75;
+      const numHits = Math.round(ly * (urK.maxHits - 1)) + 1;
+      if (isHitAtStep(urKickStep, numHits, urK.steps)) {
+        const replaceChance = ly * urK.kickAltSwapMaxProb;
         if (Math.random() < replaceChance) S.kickAlt.start(time);
         else                                S.kick.start(time);
       }
-      urKickStep = (urKickStep + 1) % 16;
-    }, '16n');
+      urKickStep = (urKickStep + 1) % urK.steps;
+    }, urK.noteDur);
 
     let urHatStep = 0;
     S.hatLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
-      if (getActiveQuadrant(x, y) !== 'UR') { urHatStep = (urHatStep + 1) % 32; return; }
+      if (getActiveQuadrant(x, y) !== 'UR') { urHatStep = (urHatStep + 1) % urH.steps; return; }
       const { lx } = localCoords('UR', x, y);
-      const numHits = Math.round(lx * 31) + 1; // 1..32
-      if (isHitAtStep(urHatStep, numHits, 32)) {
+      const numHits = Math.round(lx * (urH.maxHits - 1)) + 1;
+      if (isHitAtStep(urHatStep, numHits, urH.steps)) {
         S.hihat.start(time);
       }
-      urHatStep = (urHatStep + 1) % 32;
-    }, '32n');
+      urHatStep = (urHatStep + 1) % urH.steps;
+    }, urH.noteDur);
 
-    // ═══ UL drum sequencers: mirror of UR, running at half tempo (55.5 BPM feel) ═══
-    // Global transport stays at 111 BPM so UR is unaffected. UL uses doubled note values
-    // (8n / 16n instead of 16n / 32n) so its clock ticks at half the rate → 55.5 BPM equivalent.
-    // Corner-chaos probability scaler: 1.0 at far-TL of UL (lx=0, ly=1), 0.0 at far-BR.
-    // Uses Chebyshev distance so the influence is square-ish around the corner.
-    function ulCornerFactor(lx, ly) {
-      const d = Math.max(lx, 1 - ly); // 0 at TL corner, 1 at BR corner
-      return Math.max(0, 1 - d);      // 1 at TL, 0 at BR
+    // ═══ UL drum sequencers (config-driven; defaults to half-tempo mirror) ═══
+    const ulK = cfg.ul.kick;
+    const ulH = cfg.ul.hat;
+    const chaosCfg = cfg.ul.chaos;
+
+    // Corner-direction map: where in UL is the chaos peak?
+    // Returns a function (lx, ly) → factor in [0,1], 1 at peak, 0 at opposite corner.
+    function buildCornerFactor(corner) {
+      switch (corner) {
+        case 'TL': return (lx, ly) => Math.max(0, 1 - Math.max(lx, 1 - ly));
+        case 'TR': return (lx, ly) => Math.max(0, 1 - Math.max(1 - lx, 1 - ly));
+        case 'BL': return (lx, ly) => Math.max(0, 1 - Math.max(lx, ly));
+        case 'BR': return (lx, ly) => Math.max(0, 1 - Math.max(1 - lx, ly));
+        default:   return (lx, ly) => Math.max(0, 1 - Math.max(lx, 1 - ly)); // fallback TL
+      }
     }
-
-    // Chaos flag: enabled in Simple2, off in Simple. Read from world JSON.
-    const ulChaos = !!(world.ul && world.ul.chaos);
+    const cornerFactorFn = buildCornerFactor(chaosCfg.corner);
 
     let ulKickStep = 0;
     S.ulKickLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
-      if (getActiveQuadrant(x, y) !== 'UL') { ulKickStep = (ulKickStep + 1) % 16; return; }
+      if (getActiveQuadrant(x, y) !== 'UL') { ulKickStep = (ulKickStep + 1) % ulK.steps; return; }
       const { lx, ly } = localCoords('UL', x, y);
-      const numHits = Math.round(ly * 15) + 1; // 1..16
-      if (isHitAtStep(ulKickStep, numHits, 16)) {
-        const replaceChance = ly * 0.75; // existing kickAlt swap
+      const numHits = Math.round(ly * (ulK.maxHits - 1)) + 1;
+      if (isHitAtStep(ulKickStep, numHits, ulK.steps)) {
+        const replaceChance = ly * ulK.kickAltSwapMaxProb;
         const pickAlt = Math.random() < replaceChance;
-        // Corner-chaos (Simple2 only): 33% chance (scaled by corner proximity) to play reversed.
-        const cornerF = ulChaos ? ulCornerFactor(lx, ly) : 0;
-        const reverseChance = 0.33 * cornerF;
-        if (Math.random() < reverseChance) {
+        const cornerF = chaosCfg.enabled ? cornerFactorFn(lx, ly) : 0;
+        const reverseChance = chaosCfg.kick.reverse * cornerF;
+        if (chaosCfg.enabled && Math.random() < reverseChance) {
           if (pickAlt) S.ulKickAltReverse.start(time);
           else         S.ulKickReverse.start(time);
         } else {
@@ -218,53 +319,48 @@
           else         S.ulKick.start(time);
         }
       }
-      ulKickStep = (ulKickStep + 1) % 16;
-    }, '8n'); // half the UR rate → 55.5 BPM feel
+      ulKickStep = (ulKickStep + 1) % ulK.steps;
+    }, ulK.noteDur);
 
     let ulHatStep = 0;
     S.ulHatLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
-      if (getActiveQuadrant(x, y) !== 'UL') { ulHatStep = (ulHatStep + 1) % 32; return; }
+      if (getActiveQuadrant(x, y) !== 'UL') { ulHatStep = (ulHatStep + 1) % ulH.steps; return; }
       const { lx, ly } = localCoords('UL', x, y);
       // Mirror: density grows toward the LEFT edge (low lx = high density)
       const mirroredLx = 1 - lx;
-      const numHits = Math.round(mirroredLx * 31) + 1; // 1..32
-      if (isHitAtStep(ulHatStep, numHits, 32)) {
-        if (!ulChaos) {
+      const numHits = Math.round(mirroredLx * (ulH.maxHits - 1)) + 1;
+      if (isHitAtStep(ulHatStep, numHits, ulH.steps)) {
+        if (!chaosCfg.enabled) {
           S.ulHihat.start(time);
         } else {
-          // Corner-chaos (Simple2 only): pick ONE variant via a single dice roll, mutually exclusive.
-          // At the TL corner (cornerF=1): 50% reverse, 20% octave-down, 10% roll, 20% normal.
-          // Toward BR: probabilities scale down toward 0 (so plain hihat dominates).
-          const cornerF = ulCornerFactor(lx, ly);
-          const pReverse = 0.50 * cornerF;
-          const pOctLow  = 0.20 * cornerF;
-          const pRoll    = 0.10 * cornerF;
+          const cornerF = cornerFactorFn(lx, ly);
+          const pReverse = chaosCfg.hat.reverse    * cornerF;
+          const pOctLow  = chaosCfg.hat.octaveDown * cornerF;
+          const pRoll    = chaosCfg.hat.roll       * cornerF;
           const r = Math.random();
           if (r < pReverse) {
             S.ulHihatReverse.start(time);
           } else if (r < pReverse + pOctLow) {
             S.ulHihatLow.start(time);
           } else if (r < pReverse + pOctLow + pRoll) {
-            // 4 hits in a row at 32nd-note spacing (in UL's half-time grid).
-            // UL hat step is 16n long → spacing = 16n / 4. Use the pool so hits don't truncate.
-            const stepDur = Tone.Time('16n').toSeconds();
-            const spacing = stepDur / 4;
-            for (let i = 0; i < 4; i++) S.ulHihatRollPool[i].start(time + spacing * i);
+            // N hits in a row, evenly spaced across one UL hat step.
+            const stepDur = Tone.Time(ulH.noteDur).toSeconds();
+            const n = chaosCfg.hat.rollHits;
+            const spacing = stepDur / n;
+            for (let i = 0; i < n; i++) S.ulHihatRollPool[i].start(time + spacing * i);
           } else {
             S.ulHihat.start(time);
           }
         }
       }
-      ulHatStep = (ulHatStep + 1) % 32;
-    }, '16n'); // half the UR rate → 55.5 BPM feel
+      ulHatStep = (ulHatStep + 1) % ulH.steps;
+    }, ulH.noteDur);
 
-    // ═══ UL Portal-style FX controller (driven by xVal/yVal) ═══
-    // Runs at ~30Hz, smoothly ramps the send bus level and FX params from current XY.
-    // Send level fades to 0 outside UL so the FX tails ring out cleanly.
+    // ═══ UL Portal-style FX controller (config-driven) ═══
     let ulActive = false;
-    const RAMP = 0.08; // 80ms parameter smoothing
+    const RAMP = fxCfg.rampSec;
     const lerp = (a, b, t) => a + (b - a) * t;
     S.ulTicker = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
@@ -280,32 +376,23 @@
 
       const { lx, ly } = localCoords('UL', x, y);
 
-      // Send amount: how much drum signal feeds the Portal chain. More FX at the edges,
-      // close to dry near the center of UL. Floors at 0.25 so there's always some character.
+      // Send amount: scales with distance from UL center.
       const distFromCenter = Math.hypot(lx - 0.5, ly - 0.5) * Math.SQRT2; // 0..1
-      const sendAmount = 0.25 + distFromCenter * 0.75; // 0.25..1.0
+      const sendAmount = fxCfg.send.min + distFromCenter * (fxCfg.send.max - fxCfg.send.min);
       S.ulSendBus.gain.rampTo(sendAmount, RAMP);
 
       // Macro 1 (X): pitch + delay time
-      // lx 0 → -12 semis (octave down) | lx 0.5 → 0 | lx 1 → +12 (octave up)
-      const pitchSemis = (lx - 0.5) * 2 * 12;
+      const pitchSemis = (lx - 0.5) * 2 * fxCfg.pitch.semis;
       S.ulPitchShift.pitch = pitchSemis;
-      // Delay time morphs from dotted-8th feel (slow swing) to 16th (tight stutter) as X moves
-      const delaySec = lerp(0.375, 0.09375, Math.abs(lx - 0.5) * 2); // 8n. -> 16n at edges
+      // Delay time: center value at lx=0.5, edge value at lx=0 or 1
+      const delaySec = lerp(fxCfg.delay.centerSec, fxCfg.delay.edgeSec, Math.abs(lx - 0.5) * 2);
       S.ulDelay.delayTime.rampTo(delaySec, RAMP);
 
-      // Macro 2 (Y): grain window size + feedback + filter + reverb wet
-      // ly 0 → small window 30ms (glitchy granular), low feedback, dark/dry
-      // ly 1 → large window 200ms (smeared), high feedback, bright/washy
-      const windowSize = lerp(0.03, 0.2, ly);
-      S.ulPitchShift.windowSize = windowSize;
-      const delayFb = lerp(0.3, 0.7, ly);
-      const filterFreq = lerp(800, 9000, ly);
-      const reverbWet = lerp(0.2, 0.6, ly);
-
-      S.ulDelay.feedback.rampTo(delayFb, RAMP);
-      S.ulFilter.frequency.rampTo(filterFreq, RAMP);
-      S.ulReverb.wet.rampTo(reverbWet, RAMP);
+      // Macro 2 (Y): grain window + feedback + filter + reverb wet
+      S.ulPitchShift.windowSize = lerp(fxCfg.pitchShift.windowSize.min, fxCfg.pitchShift.windowSize.max, ly);
+      S.ulDelay.feedback.rampTo(lerp(fxCfg.delay.feedback.min, fxCfg.delay.feedback.max, ly), RAMP);
+      S.ulFilter.frequency.rampTo(lerp(fxCfg.filter.freq.min, fxCfg.filter.freq.max, ly), RAMP);
+      S.ulReverb.wet.rampTo(lerp(fxCfg.reverb.wet.min, fxCfg.reverb.wet.max, ly), RAMP);
     }, 0.033); // ~30Hz
 
     // ═══ BL / BR systems: handled by crossfade looper + update() filter routing ═══
@@ -345,8 +432,8 @@
       console.log('[sampler] crossfade looper started:', label, 'duration=' + duration.toFixed(1) + 's fade=' + fade + 's');
     }
 
-    startCrossfadeLooper(S.blBuffer, S.blFilter, 10, 5,  'BL/charlie');
-    startCrossfadeLooper(S.brBuffer, S.brFilter, 10, -6, 'BR/rain');
+    startCrossfadeLooper(S.blBuffer, S.blFilter, cfg.bl.looper.fadeSec, cfg.bl.looper.volumeDb, 'BL/' + cfg.samples.blLoop);
+    startCrossfadeLooper(S.brBuffer, S.brFilter, cfg.br.looper.fadeSec, cfg.br.looper.volumeDb, 'BR/' + cfg.samples.brLoop);
 
     Tone.getTransport().bpm.value = world.tempo.play;
     Tone.getTransport().start();
@@ -693,29 +780,21 @@
       // Simple world: 4-quadrant routing. UR sequencers self-gate.
       // BL system gets continuous gain + filter modulation here.
       if (world.meta && (world.meta.name === 'Simple' || world.meta.name === 'Simple2')) {
+        const cfg = world._cfg || DEFAULT_SIMPLE_CONFIG;
         sGain.gain.value = world.mix.master;
 
         const sx = (typeof xVal !== 'undefined') ? xVal : 0.5;
         const sy = (typeof yVal !== 'undefined') ? yVal : 0.5;
 
-        // ═══ Charlie (BL) + Rain (BR) audibility envelopes ═══
-        // Each sample has a 2D rectangle defining where it's audible.
-        // The rectangles overlap in x ∈ [0.37, 0.66] (the crossfade band).
-        //
-        //   Charlie:  x ∈ [0,    0.66],  y ∈ [0, 0.68]
-        //   Rain:     x ∈ [0.37, 1.00],  y ∈ [0, 0.68]
-        //
-        // In the x overlap band: equal-power crossfade (cos/sin).
-        // Outside the overlap (within each sample's rectangle): full amplitude.
-        // Above y=0.68: short soft fade to silence (5% band) to avoid clicks.
-        const overlapL = 0.37;
-        const overlapR = 0.66;
-        const yCap     = 0.68;
-        const yFade    = 0.05; // soft top edge
+        // ═══ BL + BR audibility envelopes (config-driven 2D rectangles + crossfade) ═══
+        const overlapL = cfg.blBr.overlapX.left;
+        const overlapR = cfg.blBr.overlapX.right;
+        const yCap     = cfg.blBr.yCap;
+        const yFade    = cfg.blBr.yFade;
 
         let blAmp = 0, brAmp = 0;
 
-        // X component
+        // X component (equal-power crossfade in the overlap band)
         let blX = 0, brX = 0;
         if (sx <= overlapL) {
           blX = 1; brX = 0;
@@ -727,7 +806,7 @@
           brX = Math.sin(t * Math.PI / 2);
         }
 
-        // Y component: full inside [0, yCap], fades out over yFade above yCap, silent further up
+        // Y component: full inside [0, yCap], fades out over yFade above yCap
         let yAmp = 0;
         if (sy <= yCap) {
           yAmp = 1;
@@ -738,19 +817,17 @@
         blAmp = blX * yAmp;
         brAmp = brX * yAmp;
 
-        // BL gain + filter
+        // BL gain + filter (cutoff sweep from BL corner to inner corner of BL square)
         if (S.blGain && S.blFilter) {
           S.blGain.gain.rampTo(blAmp, 0.08);
-          // Filter follows the original BL-square mapping: BL corner (0,0) → 150 Hz,
-          // UR corner of BL square (lx=1, ly=1, i.e. global (0.5, 0.5)) → 20 kHz.
-          // Clamp inputs to the BL square so behavior stays predictable outside.
           if (blAmp > 0.001) {
             const clampedX = Math.min(sx, 0.5);
             const clampedY = Math.min(sy, 0.5);
             const lx = Math.max(0, Math.min(1, clampedX * 2));
             const ly = Math.max(0, Math.min(1, clampedY * 2));
             const t = (lx + ly) / 2;
-            const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
+            const fMin = cfg.bl.filter.minHz, fMax = cfg.bl.filter.maxHz;
+            const cutoff = Math.exp(Math.log(fMin) + t * (Math.log(fMax) - Math.log(fMin)));
             S.blFilter.frequency.rampTo(cutoff, 0.05);
           }
         }
@@ -764,7 +841,8 @@
             const lx = Math.max(0, Math.min(1, (clampedX - 0.5) * 2));
             const ly = Math.max(0, Math.min(1, clampedY * 2));
             const t = ((1 - lx) + ly) / 2;
-            const cutoff = Math.exp(Math.log(150) + t * (Math.log(20000) - Math.log(150)));
+            const fMin = cfg.br.filter.minHz, fMax = cfg.br.filter.maxHz;
+            const cutoff = Math.exp(Math.log(fMin) + t * (Math.log(fMax) - Math.log(fMin)));
             S.brFilter.frequency.rampTo(cutoff, 0.05);
           }
         }
