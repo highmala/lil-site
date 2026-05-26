@@ -82,28 +82,42 @@
     S.brFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.brGain);
     S.brBuffer = await new Tone.ToneAudioBuffer().load(base + 'simple/samples/soothing-rain.mp3');
 
-    // ═══ UL system: Portal-style granular FX on the charlie buffer ═══
-    // FX chain: GrainPlayer → lowpass filter → feedback delay → reverb → ulGain → master
-    // Two Portal-style macros driven by XY:
-    //   X (Macro 1 - "Time/Pitch")   : detune (±700 cents) + playbackRate (0.5..1.5x)
-    //   Y (Macro 2 - "Grain Texture"): grainSize (20ms..400ms) + overlap (0.1..0.5)
-    // Plus XY-driven filter cutoff and delay feedback so movement has depth.
-    S.ulGain = new Tone.Gain(0).connect(sGain); // start muted; fades in when UL active. Routed through master.
-    S.ulReverb = new Tone.Reverb({ decay: 4.0, wet: 0.35 }).connect(S.ulGain);
-    await S.ulReverb.generate();
-    S.ulDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.35, wet: 0.3 }).connect(S.ulReverb);
-    S.ulFilter = new Tone.Filter({ frequency: 4000, type: 'lowpass', rolloff: -24, Q: 1 }).connect(S.ulDelay);
-    S.ulGrain = new Tone.GrainPlayer({
-      url: S.blBuffer, // reuse charlie buffer
-      loop: true,
-      grainSize: 0.15,
-      overlap: 0.2,
-      detune: 0,
-      playbackRate: 1.0,
-      volume: -3
-    }).connect(S.ulFilter);
+    // ═══ UL system: half-tempo drum mirror, with Portal-style granular send FX ═══
+    // Architecture: dedicated UL drum players → (dry to master) + (tap into ulSendBus → Portal FX → master).
+    // UR drums use their own players, so they stay completely dry and unaffected.
+    //
+    // Portal FX chain (send return path):
+    //   ulSendBus → PitchShift → Filter → FeedbackDelay → Reverb → ulFxGain → master
+    //
+    // Two Portal-style macros driven by XY when in UL:
+    //   X (Macro 1 "Time/Pitch")   : PitchShift detune (±12 semis) + delay time (8n. → 4n)
+    //   Y (Macro 2 "Grain Texture"): PitchShift windowSize (granular grain length 0.03..0.2)
+    //                                + delay feedback + filter cutoff + reverb wet
+    // Send amount also follows distance from UL center (more FX at the edges, dry near center).
 
-    // UL: placeholder (waiting on samples)
+    // FX return chain (built bottom-up so each node knows its destination)
+    S.ulFxGain = new Tone.Gain(1.0).connect(sGain);
+    S.ulReverb = new Tone.Reverb({ decay: 4.0, wet: 0.35 }).connect(S.ulFxGain);
+    await S.ulReverb.generate();
+    S.ulDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.4, wet: 1.0 }).connect(S.ulReverb);
+    S.ulFilter = new Tone.Filter({ frequency: 4000, type: 'lowpass', rolloff: -24, Q: 1 }).connect(S.ulDelay);
+    // PitchShift in Tone.js uses an internal granular pitch shifter — windowSize IS the grain length.
+    S.ulPitchShift = new Tone.PitchShift({ pitch: 0, windowSize: 0.1, feedback: 0.0, delayTime: 0, wet: 1.0 }).connect(S.ulFilter);
+    // The send bus: drums tap into this; it feeds the FX chain head.
+    S.ulSendBus = new Tone.Gain(0).connect(S.ulPitchShift); // start with send closed; fades open in UL
+
+    // Dedicated UL drum players (separate from UR's, so UR stays dry).
+    // Each connects to BOTH master (dry) AND the send bus (wet via FX).
+    S.ulKick    = new Tone.Player(base + 'simple/samples/kick.wav');
+    S.ulKickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav');
+    S.ulHihat   = new Tone.Player(base + 'simple/samples/hihat.wav');
+    S.ulKick.volume.value    = -5;
+    S.ulKickAlt.volume.value = -5;
+    S.ulHihat.volume.value   = -5;
+    // fan-out: dry path + send tap
+    S.ulKick.fan(sGain, S.ulSendBus);
+    S.ulKickAlt.fan(sGain, S.ulSendBus);
+    S.ulHihat.fan(sGain, S.ulSendBus);
 
     await Tone.loaded();
     console.log('[sampler] simple samples loaded');
@@ -137,10 +151,42 @@
       urHatStep = (urHatStep + 1) % 32;
     }, '32n');
 
-    // ═══ UL system: Portal-style granular controller (driven by xVal/yVal) ═══
-    // Runs at ~30Hz, smoothly ramps GrainPlayer + FX parameters from current XY position.
-    // Muted when not in UL via a short fade on S.ulGain.
-    S.ulGrain.start(0); // start the granular engine immediately, looping forever
+    // ═══ UL drum sequencers: mirror of UR, running at half tempo (55.5 BPM feel) ═══
+    // Global transport stays at 111 BPM so UR is unaffected. UL uses doubled note values
+    // (8n / 16n instead of 16n / 32n) so its clock ticks at half the rate → 55.5 BPM equivalent.
+    let ulKickStep = 0;
+    S.ulKickLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UL') { ulKickStep = (ulKickStep + 1) % 16; return; }
+      const { ly } = localCoords('UL', x, y);
+      const numHits = Math.round(ly * 15) + 1; // 1..16
+      if (isHitAtStep(ulKickStep, numHits, 16)) {
+        const replaceChance = ly * 0.75;
+        if (Math.random() < replaceChance) S.ulKickAlt.start(time);
+        else                                S.ulKick.start(time);
+      }
+      ulKickStep = (ulKickStep + 1) % 16;
+    }, '8n'); // half the UR rate → 55.5 BPM feel
+
+    let ulHatStep = 0;
+    S.ulHatLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UL') { ulHatStep = (ulHatStep + 1) % 32; return; }
+      const { lx } = localCoords('UL', x, y);
+      // Mirror: density grows toward the LEFT edge (low lx = high density)
+      const mirroredLx = 1 - lx;
+      const numHits = Math.round(mirroredLx * 31) + 1; // 1..32
+      if (isHitAtStep(ulHatStep, numHits, 32)) {
+        S.ulHihat.start(time);
+      }
+      ulHatStep = (ulHatStep + 1) % 32;
+    }, '16n'); // half the UR rate → 55.5 BPM feel
+
+    // ═══ UL Portal-style FX controller (driven by xVal/yVal) ═══
+    // Runs at ~30Hz, smoothly ramps the send bus level and FX params from current XY.
+    // Send level fades to 0 outside UL so the FX tails ring out cleanly.
     let ulActive = false;
     const RAMP = 0.08; // 80ms parameter smoothing
     const lerp = (a, b, t) => a + (b - a) * t;
@@ -149,43 +195,49 @@
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
       const inUL = getActiveQuadrant(x, y) === 'UL';
 
-      // gate the output with a smooth fade so it doesn't click when leaving UL
-      if (inUL && !ulActive) { S.ulGain.gain.rampTo(0.9, 0.25); ulActive = true; }
-      else if (!inUL && ulActive) { S.ulGain.gain.rampTo(0, 0.25); ulActive = false; }
+      if (inUL && !ulActive) { ulActive = true; }
+      else if (!inUL && ulActive) {
+        S.ulSendBus.gain.rampTo(0, 0.3);
+        ulActive = false;
+      }
       if (!inUL) return;
 
       const { lx, ly } = localCoords('UL', x, y);
 
-      // Macro 1 (X): pitch + playback rate
-      // lx 0 → -700c + 0.5x | lx 0.5 → 0c + 1x | lx 1 → +700c + 1.5x
-      const detuneCents = (lx - 0.5) * 2 * 700;
-      const playbackRate = lerp(0.5, 1.5, lx);
+      // Send amount: how much drum signal feeds the Portal chain. More FX at the edges,
+      // close to dry near the center of UL. Floors at 0.25 so there's always some character.
+      const distFromCenter = Math.hypot(lx - 0.5, ly - 0.5) * Math.SQRT2; // 0..1
+      const sendAmount = 0.25 + distFromCenter * 0.75; // 0.25..1.0
+      S.ulSendBus.gain.rampTo(sendAmount, RAMP);
 
-      // Macro 2 (Y): grain size + overlap (texture morph)
-      // ly 0 → 20ms grains, overlap 0.45 (dense glitch)
-      // ly 1 → 400ms grains, overlap 0.1  (smeared pad)
-      const grainSize = lerp(0.02, 0.4, ly);
-      const overlap = lerp(0.45, 0.1, ly);
+      // Macro 1 (X): pitch + delay time
+      // lx 0 → -12 semis (octave down) | lx 0.5 → 0 | lx 1 → +12 (octave up)
+      const pitchSemis = (lx - 0.5) * 2 * 12;
+      S.ulPitchShift.pitch = pitchSemis;
+      // Delay time morphs from dotted-8th feel (slow swing) to 16th (tight stutter) as X moves
+      const delaySec = lerp(0.375, 0.09375, Math.abs(lx - 0.5) * 2); // 8n. -> 16n at edges
+      S.ulDelay.delayTime.rampTo(delaySec, RAMP);
 
-      // Bonus depth: filter opens with Y, delay feedback grows with X distance from center
-      const filterFreq = lerp(800, 8000, ly);
-      const delayFb = 0.25 + Math.abs(lx - 0.5) * 0.5; // 0.25 → 0.5
-      const delayWet = lerp(0.15, 0.45, Math.abs(lx - 0.5) * 2);
+      // Macro 2 (Y): grain window size + feedback + filter + reverb wet
+      // ly 0 → small window 30ms (glitchy granular), low feedback, dark/dry
+      // ly 1 → large window 200ms (smeared), high feedback, bright/washy
+      const windowSize = lerp(0.03, 0.2, ly);
+      S.ulPitchShift.windowSize = windowSize;
+      const delayFb = lerp(0.3, 0.7, ly);
+      const filterFreq = lerp(800, 9000, ly);
+      const reverbWet = lerp(0.2, 0.6, ly);
 
-      // Apply with short ramps (avoid zipper noise while dragging)
-      S.ulGrain.detune = detuneCents; // GrainPlayer detune is a plain number, not a Signal
-      S.ulGrain.playbackRate = playbackRate;
-      S.ulGrain.grainSize = grainSize;
-      S.ulGrain.overlap = overlap;
-      S.ulFilter.frequency.rampTo(filterFreq, RAMP);
       S.ulDelay.feedback.rampTo(delayFb, RAMP);
-      S.ulDelay.wet.rampTo(delayWet, RAMP);
+      S.ulFilter.frequency.rampTo(filterFreq, RAMP);
+      S.ulReverb.wet.rampTo(reverbWet, RAMP);
     }, 0.033); // ~30Hz
 
     // ═══ BL / BR systems: handled by crossfade looper + update() filter routing ═══
 
     sLoop.start(0);
     S.hatLoop.start(0);
+    S.ulKickLoop.start(0);
+    S.ulHatLoop.start(0);
     S.ulTicker.start(0);
 
     // ═══ Crossfade looper helper ═══
@@ -224,7 +276,7 @@
     Tone.getTransport().start();
 
     sStarted = true;
-    console.log('[sampler] simple 4-quadrant sequencer running: UR drums @', world.tempo.play, 'bpm | UL granular FX (Portal-style) | BL + BR ambient active');
+    console.log('[sampler] simple 4-quadrant sequencer running: UR drums @', world.tempo.play, 'bpm | UL drums @', (world.tempo.play/2).toFixed(1), 'bpm → Portal-style FX send | BL + BR ambient active');
     return true;
   }
 
