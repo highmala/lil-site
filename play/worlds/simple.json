@@ -2,7 +2,7 @@
   "meta": {
     "name": "Simple",
     "artist": "angelxenakis",
-    "description": "4-quadrant sampler world. UR: kick density (Y) + hihat density (X) @ 111 BPM. UL: same drum mirror @ 55.5 BPM (hihat density mirrored toward left edge) with Portal-style granular send FX (PitchShift+Delay+Filter+Reverb) — X=pitch/delay-time macro, Y=grain window/feedback/filter/reverb macro, send amount scales with distance from UL center. BL: charlie sample with lowpass filter. BR: rain sample with mirrored lowpass filter. BL+BR crossfade and extend up into UL/UR via 2D audibility rectangles."
+    "description": "4-quadrant sampler world. UR: kick density (Y) + hihat density (X) @ 111 BPM. UL: same drum mirror @ 55.5 BPM with Portal-style granular send FX, plus corner-chaos at the far top-left of UL (50% reverse hihat / 20% octave-low hihat / 10% 32nd-roll / 33% reverse kick — all scaling linearly toward the opposite corner). BL: charlie. BR: rain. BL+BR crossfade and extend up into UL/UR via 2D audibility rectangles."
   },
   "tempo": {
     "sleep": 111,

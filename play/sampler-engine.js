@@ -119,6 +119,39 @@
     S.ulKickAlt.fan(sGain, S.ulSendBus);
     S.ulHihat.fan(sGain, S.ulSendBus);
 
+    // ═══ UL corner variants ═══
+    // Build reversed and pitched variants for the corner-chaos probabilities.
+    // Buffers are reused; reverse=true on a cloned ToneAudioBuffer gives a backward player.
+    await Tone.loaded(); // ensure raw buffers are ready before cloning
+
+    function reversedPlayer(srcBuffer, volumeDb) {
+      const buf = srcBuffer.slice(0); // clone
+      buf.reverse = true;
+      const p = new Tone.Player(buf);
+      p.volume.value = volumeDb;
+      p.fan(sGain, S.ulSendBus);
+      return p;
+    }
+
+    S.ulHihatReverse  = reversedPlayer(S.ulHihat.buffer, -5);
+    S.ulKickReverse   = reversedPlayer(S.ulKick.buffer, -5);
+    S.ulKickAltReverse= reversedPlayer(S.ulKickAlt.buffer, -5);
+
+    // Octave-down hihat: playbackRate 0.5 (one octave lower).
+    S.ulHihatLow = new Tone.Player(base + 'simple/samples/hihat.wav');
+    S.ulHihatLow.playbackRate = 0.5;
+    S.ulHihatLow.volume.value = -5;
+    S.ulHihatLow.fan(sGain, S.ulSendBus);
+
+    // Roll pool: 4 separate hihat players so 4 rapid 32nd hits don't cut each other off.
+    S.ulHihatRollPool = [];
+    for (let i = 0; i < 4; i++) {
+      const p = new Tone.Player(S.ulHihat.buffer);
+      p.volume.value = -5;
+      p.fan(sGain, S.ulSendBus);
+      S.ulHihatRollPool.push(p);
+    }
+
     await Tone.loaded();
     console.log('[sampler] simple samples loaded');
 
@@ -154,17 +187,33 @@
     // ═══ UL drum sequencers: mirror of UR, running at half tempo (55.5 BPM feel) ═══
     // Global transport stays at 111 BPM so UR is unaffected. UL uses doubled note values
     // (8n / 16n instead of 16n / 32n) so its clock ticks at half the rate → 55.5 BPM equivalent.
+    // Corner-chaos probability scaler: 1.0 at far-TL of UL (lx=0, ly=1), 0.0 at far-BR.
+    // Uses Chebyshev distance so the influence is square-ish around the corner.
+    function ulCornerFactor(lx, ly) {
+      const d = Math.max(lx, 1 - ly); // 0 at TL corner, 1 at BR corner
+      return Math.max(0, 1 - d);      // 1 at TL, 0 at BR
+    }
+
     let ulKickStep = 0;
     S.ulKickLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
       if (getActiveQuadrant(x, y) !== 'UL') { ulKickStep = (ulKickStep + 1) % 16; return; }
-      const { ly } = localCoords('UL', x, y);
+      const { lx, ly } = localCoords('UL', x, y);
       const numHits = Math.round(ly * 15) + 1; // 1..16
       if (isHitAtStep(ulKickStep, numHits, 16)) {
-        const replaceChance = ly * 0.75;
-        if (Math.random() < replaceChance) S.ulKickAlt.start(time);
-        else                                S.ulKick.start(time);
+        // Corner-chaos: 33% chance (scaled by corner proximity) to play ANY BD sample reversed.
+        const cornerF = ulCornerFactor(lx, ly);
+        const reverseChance = 0.33 * cornerF;
+        const replaceChance = ly * 0.75; // existing kickAlt swap
+        const pickAlt = Math.random() < replaceChance;
+        if (Math.random() < reverseChance) {
+          if (pickAlt) S.ulKickAltReverse.start(time);
+          else         S.ulKickReverse.start(time);
+        } else {
+          if (pickAlt) S.ulKickAlt.start(time);
+          else         S.ulKick.start(time);
+        }
       }
       ulKickStep = (ulKickStep + 1) % 16;
     }, '8n'); // half the UR rate → 55.5 BPM feel
@@ -174,12 +223,32 @@
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
       const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
       if (getActiveQuadrant(x, y) !== 'UL') { ulHatStep = (ulHatStep + 1) % 32; return; }
-      const { lx } = localCoords('UL', x, y);
+      const { lx, ly } = localCoords('UL', x, y);
       // Mirror: density grows toward the LEFT edge (low lx = high density)
       const mirroredLx = 1 - lx;
       const numHits = Math.round(mirroredLx * 31) + 1; // 1..32
       if (isHitAtStep(ulHatStep, numHits, 32)) {
-        S.ulHihat.start(time);
+        // Corner-chaos: pick ONE variant via a single dice roll, mutually exclusive.
+        // At the TL corner (cornerF=1): 50% reverse, 20% octave-down, 10% roll, 20% normal.
+        // Toward BR: probabilities scale down toward 0 (so plain hihat dominates).
+        const cornerF = ulCornerFactor(lx, ly);
+        const pReverse = 0.50 * cornerF;
+        const pOctLow  = 0.20 * cornerF;
+        const pRoll    = 0.10 * cornerF;
+        const r = Math.random();
+        if (r < pReverse) {
+          S.ulHihatReverse.start(time);
+        } else if (r < pReverse + pOctLow) {
+          S.ulHihatLow.start(time);
+        } else if (r < pReverse + pOctLow + pRoll) {
+          // 4 hits in a row at 32nd-note spacing (in UL's half-time grid).
+          // UL hat step is 16n long → spacing = 16n / 4 = 64n. Use the pool so hits don't truncate.
+          const stepDur = Tone.Time('16n').toSeconds();
+          const spacing = stepDur / 4;
+          for (let i = 0; i < 4; i++) S.ulHihatRollPool[i].start(time + spacing * i);
+        } else {
+          S.ulHihat.start(time);
+        }
       }
       ulHatStep = (ulHatStep + 1) % 32;
     }, '16n'); // half the UR rate → 55.5 BPM feel
