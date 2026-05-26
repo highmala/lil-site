@@ -2,7 +2,7 @@
   "meta": {
     "name": "Simple",
     "artist": "angelxenakis",
-    "description": "Baseline 4-quadrant world. UR drums @ 111 BPM. UL half-tempo drum mirror @ 55.5 BPM with Portal-style granular send FX. BL: charlie. BR: rain. Tweak Simple-only behavior by adding fields under `config` below — they deep-merge over engine defaults and do not affect Simple2."
+    "description": "4-quadrant sampler world. UR: kick density (Y) + hihat density (X) @ 111 BPM. UL: same drum mirror @ 55.5 BPM (hihat density mirrored toward left edge) with Portal-style granular send FX (PitchShift+Delay+Filter+Reverb) — X=pitch/delay-time macro, Y=grain window/feedback/filter/reverb macro, send amount scales with distance from UL center. BL: charlie sample with lowpass filter. BR: rain sample with mirrored lowpass filter. BL+BR crossfade and extend up into UL/UR via 2D audibility rectangles."
   },
   "tempo": {
     "sleep": 111,
@@ -18,6 +18,14 @@
     "ss": "#222222",
     "fs": "#222222"
   },
-  "config": {
+  "ul": {
+    "chaos": false
+  },
+  "samples": {
+    "kick":    "simple/samples/kick.wav",
+    "kickAlt": "simple/samples/kick-alt.wav",
+    "hihat":   "simple/samples/hihat.wav",
+    "blLoop":  "simple/samples/charlie.mp3",
+    "brLoop":  "simple/samples/soothing-rain.mp3"
   }
 }

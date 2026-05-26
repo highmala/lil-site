@@ -2,7 +2,7 @@
   "meta": {
     "name": "Simple2",
     "artist": "angelxenakis",
-    "description": "Branch of Simple with corner-chaos in UL. All other behavior identical to Simple unless overridden under `config` below. Add Simple2-only tweaks here — they deep-merge over engine defaults and do not affect Simple."
+    "description": "Branch of Simple with corner-chaos in UL. UR: kick density (Y) + hihat density (X) @ 111 BPM. UL: half-tempo drum mirror @ 55.5 BPM with Portal-style granular send FX, PLUS corner-chaos at the far top-left of UL — on each UL hihat step: 50% reverse hihat / 20% octave-low hihat / 10% 32nd-note roll / otherwise normal; on each UL kick step: 33% reverse kick. All chaos probabilities scale linearly toward the opposite UL corner (BR of UL → 0%). BL: charlie. BR: rain. BL+BR crossfade and extend up into UL/UR via 2D audibility rectangles. Shares all sample assets with Simple."
   },
   "tempo": {
     "sleep": 111,
@@ -18,14 +18,14 @@
     "ss": "#222222",
     "fs": "#222222"
   },
-  "config": {
-    "ul": {
-      "chaos": {
-        "enabled": true,
-        "corner": "TL",
-        "hat":  { "reverse": 0.50, "octaveDown": 0.20, "roll": 0.10, "rollHits": 4 },
-        "kick": { "reverse": 0.33 }
-      }
-    }
+  "ul": {
+    "chaos": true
+  },
+  "samples": {
+    "kick":    "simple/samples/kick.wav",
+    "kickAlt": "simple/samples/kick-alt.wav",
+    "hihat":   "simple/samples/hihat.wav",
+    "blLoop":  "simple/samples/charlie.mp3",
+    "brLoop":  "simple/samples/soothing-rain.mp3"
   }
 }
