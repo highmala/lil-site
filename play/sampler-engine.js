@@ -748,12 +748,15 @@
           S.thaiBirdsGain.gain.rampTo(vol, VOL_RAMP);
 
           // Playback rate sweep on the sample itself (separate from the delay-line pitch wobble).
-          // In Tone v15 Player.playbackRate is a Signal — ramp it smoothly. Combined with the
-          // delay's read-head wobble you get layered detuning.
-          if (S.thaiBirds.playbackRate && typeof S.thaiBirds.playbackRate.rampTo === 'function') {
-            S.thaiBirds.playbackRate.rampTo(rate, VOL_RAMP);
-          } else if (S.thaiBirds.playbackRate && 'value' in S.thaiBirds.playbackRate) {
-            S.thaiBirds.playbackRate.value = rate;
+          // In Tone v15.1.22, Player.playbackRate is exposed as a plain number setter (it
+          // internally updates the active BufferSource's AudioParam via setValueAtTime).
+          // Just assign; the setter does the right thing on each tick. Don't poke `.rampTo`
+          // or use `in` here — those throw on primitives.
+          const pr = S.thaiBirds.playbackRate;
+          if (pr && typeof pr === 'object' && typeof pr.rampTo === 'function') {
+            pr.rampTo(rate, VOL_RAMP);
+          } else if (pr && typeof pr === 'object') {
+            pr.value = rate;
           } else {
             S.thaiBirds.playbackRate = rate;
           }
