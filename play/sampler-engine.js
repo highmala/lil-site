@@ -50,8 +50,313 @@
     return { lx: Math.max(0, Math.min(1, lx)), ly: Math.max(0, Math.min(1, ly)) };
   }
 
-  async function initSimple(worldName) {
-    console.log('[sampler] init SIMPLE world (4-quadrant)');
+  async function initSimple1(worldName) {
+    console.log('[sampler] init SIMPLE1 world (4-quadrant)');
+
+    const resp = await fetch('/play/worlds/' + worldName + '.json');
+    if (!resp.ok) throw new Error('World JSON not found: ' + resp.status);
+    world = await resp.json();
+    console.log('[sampler] world loaded:', world.meta.name);
+
+    // Minimal chain: master gain → destination (no FX)
+    sGain = new Tone.Gain(world.mix.master).toDestination();
+
+    const base = '/play/worlds/';
+
+    // UR samples (the original Simple system: 2 kicks + hihat)
+    // -5 dB on each to balance against BL sample level
+    S.kick    = new Tone.Player(base + 'simple/samples/kick.wav').connect(sGain);
+    S.kickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav').connect(sGain);
+    S.hihat   = new Tone.Player(base + 'simple/samples/hihat.wav').connect(sGain);
+    S.kick.volume.value    = -5;
+    S.kickAlt.volume.value = -5;
+    S.hihat.volume.value   = -5;
+
+    // BL system: "charlie" with 10s crossfade loop → lowpass filter → gain → master
+    S.blGain   = new Tone.Gain(0).connect(sGain);
+    S.blFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.blGain);
+    S.blBuffer = await new Tone.ToneAudioBuffer().load(base + 'simple/samples/charlie.mp3');
+
+    // BR system: "soothing rain" with 10s crossfade loop → mirrored filter → gain → master
+    S.brGain   = new Tone.Gain(0).connect(sGain);
+    S.brFilter = new Tone.Filter({ frequency: 150, type: 'lowpass', rolloff: -96 }).connect(S.brGain);
+    S.brBuffer = await new Tone.ToneAudioBuffer().load(base + 'simple/samples/soothing-rain.mp3');
+
+    // ═══ UL system: half-tempo drum mirror, with Portal-style granular send FX ═══
+    // Architecture: dedicated UL drum players → (dry to master) + (tap into ulSendBus → Portal FX → master).
+    // UR drums use their own players, so they stay completely dry and unaffected.
+    //
+    // Portal FX chain (send return path):
+    //   ulSendBus → PitchShift → Filter → FeedbackDelay → Reverb → ulFxGain → master
+    //
+    // Two Portal-style macros driven by XY when in UL:
+    //   X (Macro 1 "Time/Pitch")   : PitchShift detune (±12 semis) + delay time (8n. → 4n)
+    //   Y (Macro 2 "Grain Texture"): PitchShift windowSize (granular grain length 0.03..0.2)
+    //                                + delay feedback + filter cutoff + reverb wet
+    // Send amount also follows distance from UL center (more FX at the edges, dry near center).
+
+    // FX return chain (built bottom-up so each node knows its destination)
+    S.ulFxGain = new Tone.Gain(1.0).connect(sGain);
+    S.ulReverb = new Tone.Reverb({ decay: 4.0, wet: 0.35 }).connect(S.ulFxGain);
+    await S.ulReverb.generate();
+    S.ulDelay = new Tone.FeedbackDelay({ delayTime: '8n.', feedback: 0.4, wet: 1.0 }).connect(S.ulReverb);
+    S.ulFilter = new Tone.Filter({ frequency: 4000, type: 'lowpass', rolloff: -24, Q: 1 }).connect(S.ulDelay);
+    // PitchShift in Tone.js uses an internal granular pitch shifter — windowSize IS the grain length.
+    S.ulPitchShift = new Tone.PitchShift({ pitch: 0, windowSize: 0.1, feedback: 0.0, delayTime: 0, wet: 1.0 }).connect(S.ulFilter);
+    // The send bus: drums tap into this; it feeds the FX chain head.
+    S.ulSendBus = new Tone.Gain(0).connect(S.ulPitchShift); // start with send closed; fades open in UL
+
+    // Dedicated UL drum players (separate from UR's, so UR stays dry).
+    // Each connects to BOTH master (dry) AND the send bus (wet via FX).
+    S.ulKick    = new Tone.Player(base + 'simple/samples/kick.wav');
+    S.ulKickAlt = new Tone.Player(base + 'simple/samples/kick-alt.wav');
+    S.ulHihat   = new Tone.Player(base + 'simple/samples/hihat.wav');
+    S.ulKick.volume.value    = -5;
+    S.ulKickAlt.volume.value = -5;
+    S.ulHihat.volume.value   = -5;
+    // fan-out: dry path + send tap
+    S.ulKick.fan(sGain, S.ulSendBus);
+    S.ulKickAlt.fan(sGain, S.ulSendBus);
+    S.ulHihat.fan(sGain, S.ulSendBus);
+
+    // ═══ UL corner variants ═══
+    // Build reversed and pitched variants for the corner-chaos probabilities.
+    // Buffers are reused; reverse=true on a cloned ToneAudioBuffer gives a backward player.
+    await Tone.loaded(); // ensure raw buffers are ready before cloning
+
+    function reversedPlayer(srcBuffer, volumeDb) {
+      const buf = srcBuffer.slice(0); // clone
+      buf.reverse = true;
+      const p = new Tone.Player(buf);
+      p.volume.value = volumeDb;
+      p.fan(sGain, S.ulSendBus);
+      return p;
+    }
+
+    S.ulHihatReverse  = reversedPlayer(S.ulHihat.buffer, -5);
+    S.ulKickReverse   = reversedPlayer(S.ulKick.buffer, -5);
+    S.ulKickAltReverse= reversedPlayer(S.ulKickAlt.buffer, -5);
+
+    // Octave-down hihat: playbackRate 0.5 (one octave lower).
+    S.ulHihatLow = new Tone.Player(base + 'simple/samples/hihat.wav');
+    S.ulHihatLow.playbackRate = 0.5;
+    S.ulHihatLow.volume.value = -5;
+    S.ulHihatLow.fan(sGain, S.ulSendBus);
+
+    // Roll pool: 4 separate hihat players so 4 rapid 32nd hits don't cut each other off.
+    S.ulHihatRollPool = [];
+    for (let i = 0; i < 4; i++) {
+      const p = new Tone.Player(S.ulHihat.buffer);
+      p.volume.value = -5;
+      p.fan(sGain, S.ulSendBus);
+      S.ulHihatRollPool.push(p);
+    }
+
+    await Tone.loaded();
+    console.log('[sampler] simple samples loaded');
+
+    // ═══ UR system: kick 16n density (Y) + hihat 32n density (X) ═══
+    let urKickStep = 0;
+    sLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UR') { urKickStep = (urKickStep + 1) % 16; return; }
+      const { ly } = localCoords('UR', x, y);
+      const numHits = Math.round(ly * 15) + 1; // 1..16
+      if (isHitAtStep(urKickStep, numHits, 16)) {
+        const replaceChance = ly * 0.75;
+        if (Math.random() < replaceChance) S.kickAlt.start(time);
+        else                                S.kick.start(time);
+      }
+      urKickStep = (urKickStep + 1) % 16;
+    }, '16n');
+
+    let urHatStep = 0;
+    S.hatLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UR') { urHatStep = (urHatStep + 1) % 32; return; }
+      const { lx } = localCoords('UR', x, y);
+      const numHits = Math.round(lx * 31) + 1; // 1..32
+      if (isHitAtStep(urHatStep, numHits, 32)) {
+        S.hihat.start(time);
+      }
+      urHatStep = (urHatStep + 1) % 32;
+    }, '32n');
+
+    // ═══ UL drum sequencers: mirror of UR, running at half tempo (55.5 BPM feel) ═══
+    // Global transport stays at 111 BPM so UR is unaffected. UL uses doubled note values
+    // (8n / 16n instead of 16n / 32n) so its clock ticks at half the rate → 55.5 BPM equivalent.
+    // Corner-chaos probability scaler: 1.0 at far-TL of UL (lx=0, ly=1), 0.0 at far-BR.
+    // Uses Chebyshev distance so the influence is square-ish around the corner.
+    function ulCornerFactor(lx, ly) {
+      const d = Math.max(lx, 1 - ly); // 0 at TL corner, 1 at BR corner
+      return Math.max(0, 1 - d);      // 1 at TL, 0 at BR
+    }
+
+    // Chaos flag: enabled in Simple2, off in Simple. Read from world JSON.
+    const ulChaos = !!(world.ul && world.ul.chaos);
+
+    let ulKickStep = 0;
+    S.ulKickLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UL') { ulKickStep = (ulKickStep + 1) % 16; return; }
+      const { lx, ly } = localCoords('UL', x, y);
+      const numHits = Math.round(ly * 15) + 1; // 1..16
+      if (isHitAtStep(ulKickStep, numHits, 16)) {
+        const replaceChance = ly * 0.75; // existing kickAlt swap
+        const pickAlt = Math.random() < replaceChance;
+        // Corner-chaos (Simple2 only): 33% chance (scaled by corner proximity) to play reversed.
+        const cornerF = ulChaos ? ulCornerFactor(lx, ly) : 0;
+        const reverseChance = 0.33 * cornerF;
+        if (Math.random() < reverseChance) {
+          if (pickAlt) S.ulKickAltReverse.start(time);
+          else         S.ulKickReverse.start(time);
+        } else {
+          if (pickAlt) S.ulKickAlt.start(time);
+          else         S.ulKick.start(time);
+        }
+      }
+      ulKickStep = (ulKickStep + 1) % 16;
+    }, '8n'); // half the UR rate → 55.5 BPM feel
+
+    let ulHatStep = 0;
+    S.ulHatLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UL') { ulHatStep = (ulHatStep + 1) % 32; return; }
+      const { lx, ly } = localCoords('UL', x, y);
+      // Mirror: density grows toward the LEFT edge (low lx = high density)
+      const mirroredLx = 1 - lx;
+      const numHits = Math.round(mirroredLx * 31) + 1; // 1..32
+      if (isHitAtStep(ulHatStep, numHits, 32)) {
+        if (!ulChaos) {
+          S.ulHihat.start(time);
+        } else {
+          // Corner-chaos (Simple2 only): pick ONE variant via a single dice roll, mutually exclusive.
+          // At the TL corner (cornerF=1): 50% reverse, 20% octave-down, 10% roll, 20% normal.
+          // Toward BR: probabilities scale down toward 0 (so plain hihat dominates).
+          const cornerF = ulCornerFactor(lx, ly);
+          const pReverse = 0.50 * cornerF;
+          const pOctLow  = 0.20 * cornerF;
+          const pRoll    = 0.10 * cornerF;
+          const r = Math.random();
+          if (r < pReverse) {
+            S.ulHihatReverse.start(time);
+          } else if (r < pReverse + pOctLow) {
+            S.ulHihatLow.start(time);
+          } else if (r < pReverse + pOctLow + pRoll) {
+            // 4 hits in a row at 32nd-note spacing (in UL's half-time grid).
+            // UL hat step is 16n long → spacing = 16n / 4. Use the pool so hits don't truncate.
+            const stepDur = Tone.Time('16n').toSeconds();
+            const spacing = stepDur / 4;
+            for (let i = 0; i < 4; i++) S.ulHihatRollPool[i].start(time + spacing * i);
+          } else {
+            S.ulHihat.start(time);
+          }
+        }
+      }
+      ulHatStep = (ulHatStep + 1) % 32;
+    }, '16n'); // half the UR rate → 55.5 BPM feel
+
+    // ═══ UL Portal-style FX controller (driven by xVal/yVal) ═══
+    // Runs at ~30Hz, smoothly ramps the send bus level and FX params from current XY.
+    // Send level fades to 0 outside UL so the FX tails ring out cleanly.
+    let ulActive = false;
+    const RAMP = 0.08; // 80ms parameter smoothing
+    const lerp = (a, b, t) => a + (b - a) * t;
+    S.ulTicker = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      const inUL = getActiveQuadrant(x, y) === 'UL';
+
+      if (inUL && !ulActive) { ulActive = true; }
+      else if (!inUL && ulActive) {
+        S.ulSendBus.gain.rampTo(0, 0.3);
+        ulActive = false;
+      }
+      if (!inUL) return;
+
+      const { lx, ly } = localCoords('UL', x, y);
+
+      // Send amount: how much drum signal feeds the Portal chain. More FX at the edges,
+      // close to dry near the center of UL. Floors at 0.25 so there's always some character.
+      const distFromCenter = Math.hypot(lx - 0.5, ly - 0.5) * Math.SQRT2; // 0..1
+      const sendAmount = 0.25 + distFromCenter * 0.75; // 0.25..1.0
+      S.ulSendBus.gain.rampTo(sendAmount, RAMP);
+
+      // Macro 1 (X): pitch + delay time
+      // lx 0 → -12 semis (octave down) | lx 0.5 → 0 | lx 1 → +12 (octave up)
+      const pitchSemis = (lx - 0.5) * 2 * 12;
+      S.ulPitchShift.pitch = pitchSemis;
+      // Delay time morphs from dotted-8th feel (slow swing) to 16th (tight stutter) as X moves
+      const delaySec = lerp(0.375, 0.09375, Math.abs(lx - 0.5) * 2); // 8n. -> 16n at edges
+      S.ulDelay.delayTime.rampTo(delaySec, RAMP);
+
+      // Macro 2 (Y): grain window size + feedback + filter + reverb wet
+      // ly 0 → small window 30ms (glitchy granular), low feedback, dark/dry
+      // ly 1 → large window 200ms (smeared), high feedback, bright/washy
+      const windowSize = lerp(0.03, 0.2, ly);
+      S.ulPitchShift.windowSize = windowSize;
+      const delayFb = lerp(0.3, 0.7, ly);
+      const filterFreq = lerp(800, 9000, ly);
+      const reverbWet = lerp(0.2, 0.6, ly);
+
+      S.ulDelay.feedback.rampTo(delayFb, RAMP);
+      S.ulFilter.frequency.rampTo(filterFreq, RAMP);
+      S.ulReverb.wet.rampTo(reverbWet, RAMP);
+    }, 0.033); // ~30Hz
+
+    // ═══ BL / BR systems: handled by crossfade looper + update() filter routing ═══
+
+    sLoop.start(0);
+    S.hatLoop.start(0);
+    S.ulKickLoop.start(0);
+    S.ulHatLoop.start(0);
+    S.ulTicker.start(0);
+
+    // ═══ Crossfade looper helper ═══
+    // Spawns a fresh Tone.Player every (duration - fadeSec) seconds, each with its own
+    // fadeIn/fadeOut envelope. Adjacent cycles overlap by fadeSec, producing a seamless
+    // crossfade across the loop boundary. Old players self-dispose after playback.
+    function startCrossfadeLooper(buffer, destination, fadeSec, volumeDb, label) {
+      const duration = buffer.duration;
+      const fade = Math.min(fadeSec, duration * 0.45); // safety
+      const cycleLen = duration - fade;
+      let nextStart = Tone.now() + 0.2; // small lookahead
+
+      function spawn() {
+        const startAt = nextStart;
+        const p = new Tone.Player(buffer).connect(destination);
+        p.volume.value = volumeDb;
+        p.fadeIn = fade;
+        p.fadeOut = fade;
+        p.start(startAt);
+        // schedule disposal a bit after it would naturally stop
+        const lifetimeMs = (startAt - Tone.now() + duration + 1) * 1000;
+        setTimeout(() => { try { p.dispose(); } catch(_) {} }, lifetimeMs);
+
+        nextStart = startAt + cycleLen;
+        const msToNextSpawn = Math.max(0, (nextStart - Tone.now()) * 1000);
+        setTimeout(spawn, msToNextSpawn);
+      }
+      spawn();
+      console.log('[sampler] crossfade looper started:', label, 'duration=' + duration.toFixed(1) + 's fade=' + fade + 's');
+    }
+
+    startCrossfadeLooper(S.blBuffer, S.blFilter, 10, 5,  'BL/charlie');
+    startCrossfadeLooper(S.brBuffer, S.brFilter, 10, -6, 'BR/rain');
+
+    Tone.getTransport().bpm.value = world.tempo.play;
+    Tone.getTransport().start();
+
+    sStarted = true;
+    console.log('[sampler] simple 4-quadrant sequencer running: UR drums @', world.tempo.play, 'bpm | UL drums @', (world.tempo.play/2).toFixed(1), 'bpm → Portal-style FX send | BL + BR ambient active');
+    return true;
+  }
+  async function initSimple2(worldName) {
+    console.log('[sampler] init SIMPLE2 world (4-quadrant)');
 
     const resp = await fetch('/play/worlds/' + worldName + '.json');
     if (!resp.ok) throw new Error('World JSON not found: ' + resp.status);
@@ -357,7 +662,8 @@
   }
 
   async function init(worldName) {
-    if (worldName === 'simple' || worldName === 'simple2') return initSimple(worldName);
+    if (worldName === 'simple') return initSimple1(worldName);
+    if (worldName === 'simple2') return initSimple2(worldName);
 
     console.log('[sampler] init:', worldName);
 
