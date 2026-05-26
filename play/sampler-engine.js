@@ -742,9 +742,21 @@
           const t = (lx + ly) / 2;
           const vol = t;                                       // 0 → 1
           const dly = DELAY_MIN + t * (DELAY_MAX - DELAY_MIN); // 0.05s → 2.0s
+          const rate = 0.5 + t * 0.5;                          // 0.5× at inner BL → 1.0× at outer TR
 
           // Volume: standard smoothed ramp — no pitch consequence, just a clean fade.
           S.thaiBirdsGain.gain.rampTo(vol, VOL_RAMP);
+
+          // Playback rate sweep on the sample itself (separate from the delay-line pitch wobble).
+          // In Tone v15 Player.playbackRate is a Signal — ramp it smoothly. Combined with the
+          // delay's read-head wobble you get layered detuning.
+          if (S.thaiBirds.playbackRate && typeof S.thaiBirds.playbackRate.rampTo === 'function') {
+            S.thaiBirds.playbackRate.rampTo(rate, VOL_RAMP);
+          } else if (S.thaiBirds.playbackRate && 'value' in S.thaiBirds.playbackRate) {
+            S.thaiBirds.playbackRate.value = rate;
+          } else {
+            S.thaiBirds.playbackRate = rate;
+          }
 
           // Delay time: clean linear ramp to target across one ticker period.
           // This is what creates the audible pitch wobble — don't smooth it further.
