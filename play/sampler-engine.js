@@ -516,23 +516,120 @@
     try {
       const head = await fetch(thaiUrl, { method: 'HEAD' });
       if (head.ok) {
-        // Tape-style delay: feedback is heavy so the pitched/wobbled signal cycles back
-        // through the delay line multiple times, layering the wobble. The wet signal is
-        // prominent because that's where the pitch-bend lives — dry stays clean alongside.
+        // ═══ Ableton-style stereo delay (custom-built) ═══
+        // PingPong topology with cross-coupled feedback, plus filtered+saturated feedback
+        // loops for analog warmth and dub-style high/low cuts on each repeat. Subtle LFO
+        // on the delay time gives chorus-like wobble even when the ball is stationary.
+        //
+        // Topology per channel (mirror for R):
+        //   in → splitter[L] → delayL ─┬→ wet outL
+        //                            │
+        //                   fbHpL ← fbLpL ← (saturation) ← fbGainL
+        //                            │
+        //                            └→ delayR.input  (cross-coupled → ping-pong)
+        //
+        // A single shared `delayTime` Signal fans out to both delayL and delayR so the
+        // pitch-wobble ramp logic below stays unchanged.
+        function buildAbletonStyleDelay({
+          delayTime = 0.5,
+          maxDelay  = 2.5,
+          feedback  = 0.55,    // medium-heavy
+          wet       = 0.65,
+          hpHz      = 80,      // remove low-end mud from feedback
+          lpHz      = 5500,    // remove harsh top from feedback
+          driveAmt  = 0.18,    // subtle saturation for warmth
+          lfoHz     = 0.22,    // very slow modulation
+          lfoDepth  = 0.0015   // ±1.5ms wobble
+        } = {}) {
+          // I/O
+          const inputGain  = new Tone.Gain(1);
+          const wetOut     = new Tone.Gain(wet);
+          const dryOut     = new Tone.Gain(1 - Math.min(0.7, wet)); // crude dry-trim
+          const output     = new Tone.Gain(1);
+
+          // Stereo split + merge
+          const splitter   = new Tone.Split();
+          const mergerWet  = new Tone.Merge();
+
+          // Per-channel delays
+          const delayL = new Tone.Delay({ delayTime, maxDelay });
+          const delayR = new Tone.Delay({ delayTime, maxDelay });
+
+          // Feedback chains (filter + saturation + gain) — one per channel
+          function buildFbChain() {
+            const hp    = new Tone.Filter({ frequency: hpHz, type: 'highpass', rolloff: -12 });
+            const lp    = new Tone.Filter({ frequency: lpHz, type: 'lowpass',  rolloff: -12 });
+            const drive = new Tone.Distortion({ distortion: driveAmt, oversample: '2x', wet: 0.6 });
+            const fbG   = new Tone.Gain(feedback);
+            hp.chain(lp, drive, fbG);
+            return { input: hp, output: fbG, hp, lp, drive, fbG };
+          }
+          const fbL = buildFbChain();
+          const fbR = buildFbChain();
+
+          // Routing — input split into L/R delays
+          inputGain.connect(splitter);
+          splitter.connect(delayL, 0); // left channel → delayL
+          splitter.connect(delayR, 1); // right channel → delayR
+
+          // Cross-coupled feedback (this is what creates ping-pong)
+          //   delayL out → fbL chain → delayR input
+          //   delayR out → fbR chain → delayL input
+          delayL.connect(fbL.input);
+          fbL.output.connect(delayR);
+          delayR.connect(fbR.input);
+          fbR.output.connect(delayL);
+
+          // Wet path: each delay output → a channel of the wet merger
+          delayL.connect(mergerWet, 0, 0);
+          delayR.connect(mergerWet, 0, 1);
+          mergerWet.connect(wetOut);
+
+          // Dry path (parallel)
+          inputGain.connect(dryOut);
+
+          // Sum to output
+          wetOut.connect(output);
+          dryOut.connect(output);
+
+          // Shared delayTime control: a Signal that fans to both delays' delayTime AudioParams.
+          // Ramping this Signal is what produces the tape-style pitch wobble (Doppler on read head).
+          const delayTimeSignal = new Tone.Signal({ value: delayTime, units: 'time' });
+          delayTimeSignal.connect(delayL.delayTime);
+          delayTimeSignal.connect(delayR.delayTime);
+
+          // Subtle modulation LFO — adds character even when delayTime is steady.
+          const lfo = new Tone.LFO({ frequency: lfoHz, min: -lfoDepth, max: lfoDepth, type: 'sine' });
+          lfo.connect(delayL.delayTime);
+          lfo.connect(delayR.delayTime);
+          lfo.start();
+
+          return {
+            input: inputGain,
+            output,
+            delayTime: delayTimeSignal,
+            feedback: fbL.fbG.gain,        // expose for dynamic tweaks if needed
+            _nodes: { delayL, delayR, fbL, fbR, splitter, mergerWet, wetOut, dryOut, lfo, delayTimeSignal }
+          };
+        }
+
         S.thaiBirdsGain = new Tone.Gain(0).connect(sGain);
-        S.thaiBirdsDelay = new Tone.FeedbackDelay({
-          delayTime: 0.5,
-          feedback: 0.72,   // heavy-ish: multiple wobble repeats
-          wet: 0.6          // wet-forward, the pitched echoes are the star
-        }).connect(S.thaiBirdsGain);
+        S.thaiBirdsDelay = buildAbletonStyleDelay({
+          delayTime: 0.5, maxDelay: 2.5,
+          feedback: 0.6, wet: 0.7,
+          hpHz: 80, lpHz: 5500, driveAmt: 0.2,
+          lfoHz: 0.22, lfoDepth: 0.0015
+        });
+        S.thaiBirdsDelay.output.connect(S.thaiBirdsGain);
+
         S.thaiBirds = new Tone.Player({
           url: thaiUrl,
           loop: false,
           onstop: () => { S.thaiBirdsPlaying = false; }
-        }).connect(S.thaiBirdsDelay);
+        }).connect(S.thaiBirdsDelay.input);
         await Tone.loaded();
         S.thaiBirdsReady = true;
-        console.log('[sampler] thailand-birds loaded.');
+        console.log('[sampler] thailand-birds loaded with Ableton-style stereo delay.');
       } else {
         console.warn('[sampler] thailand-birds.mp3 not deployed (HTTP', head.status, '). UR bird layer silent until you drop the file at play/worlds/simple/samples/thailand-birds.mp3.');
       }
