@@ -182,24 +182,6 @@
     }
     body.world-simple #quad-highlight { display: block; }
 
-    /* Snare stripe overlay (Simple2 only): visualize the y ∈ [0.60, 0.72] band
-       where the drum sequencers fire a 25% backbeat snare. */
-    #snare-stripe {
-      position: absolute;
-      left: 0;
-      width: 100%;
-      /* y=0 is the bottom of the field; CSS top counts from the top.
-         Stripe spans y ∈ [0.60, 0.72], so top ∈ [0.28, 0.40] of field, height 0.12. */
-      top: 28%;
-      height: 12%;
-      border: 2px solid rgba(0,0,0,0.8);
-      background: transparent;
-      pointer-events: none;
-      z-index: 1;
-      display: none;
-    }
-    body.world-simple2 #snare-stripe { display: block; }
-
     /* Mute button */
     #mute-btn {
       position: absolute;
@@ -291,7 +273,6 @@
       <div class="line v"></div>
     </div>
     <div id="quad-highlight"></div>
-    <div id="snare-stripe"></div>
 
     <div id="app-logo">lil</div>
 
