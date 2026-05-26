@@ -1293,14 +1293,33 @@
         throw new Error('Not enough transients (' + chosen.length + ')');
       }
 
-      // 4. Slice 0.2s windows; apply tiny pre-roll (3ms) so attack isn't cut
+      // 4. Slice 0.2s windows; apply tiny pre-roll (3ms) so attack isn't cut.
+      //    Then peak-normalize each slice to ~-1 dBFS so recorded hits sit at the same
+      //    perceived level as the baked-in BL (charlie) / BR (rain) loops — quiet mic
+      //    captures otherwise feel buried under the ambient beds.
       const preRollSamples = Math.floor(sampleRate * 0.003);
+      const NORMALIZE_PEAK = 0.89; // ~-1 dBFS, headroom to avoid intersample clipping
+      const SILENCE_THRESHOLD = 0.001; // ~-60 dBFS; below this we leave the slice alone
       const slices = chosen.map(c => {
         let start = c.frame * hop - preRollSamples;
         if (start < 0) start = 0;
         const end = Math.min(start + sliceLenSamples, captureBuf.length);
         const slice = captureBuf.slice(start, end);
-        // Small fade-out (last 5ms) to avoid clicks
+
+        // Peak-normalize: find max abs sample, scale the whole slice so that peak hits
+        // NORMALIZE_PEAK. Skip if the slice is effectively silent.
+        let peak = 0;
+        for (let i = 0; i < slice.length; i++) {
+          const a = Math.abs(slice[i]);
+          if (a > peak) peak = a;
+        }
+        if (peak > SILENCE_THRESHOLD) {
+          const gain = NORMALIZE_PEAK / peak;
+          for (let i = 0; i < slice.length; i++) slice[i] *= gain;
+        }
+
+        // Small fade-out (last 5ms) to avoid clicks. Applied AFTER normalize so the fade
+        // envelope rides on the normalized waveform (peak still respects NORMALIZE_PEAK).
         const fadeSamples = Math.min(slice.length, Math.floor(sampleRate * 0.005));
         for (let i = 0; i < fadeSamples; i++) {
           const idx = slice.length - fadeSamples + i;
