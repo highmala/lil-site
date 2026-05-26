@@ -512,7 +512,7 @@
     //   has ended (so re-entering UR mid-play doesn't restart; re-entering after end does).
     S.thaiBirdsReady = false;
     S.thaiBirdsPlaying = false;
-    const thaiUrl = base + 'simple/samples/thailand-birds.wav';
+    const thaiUrl = base + 'simple/samples/thailand-birds.mp3';
     try {
       const head = await fetch(thaiUrl, { method: 'HEAD' });
       if (head.ok) {
@@ -532,10 +532,10 @@
         S.thaiBirdsReady = true;
         console.log('[sampler] thailand-birds loaded.');
       } else {
-        console.warn('[sampler] thailand-birds.wav not deployed (HTTP', head.status, '). UR bird layer silent until you drop the file at play/worlds/simple/samples/thailand-birds.wav.');
+        console.warn('[sampler] thailand-birds.mp3 not deployed (HTTP', head.status, '). UR bird layer silent until you drop the file at play/worlds/simple/samples/thailand-birds.mp3.');
       }
     } catch (e) {
-      console.warn('[sampler] thailand-birds.wav probe failed; UR bird layer disabled. Error:', e);
+      console.warn('[sampler] thailand-birds.mp3 probe failed; UR bird layer disabled. Error:', e);
     }
 
     await Tone.loaded();
