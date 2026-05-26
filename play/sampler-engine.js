@@ -503,6 +503,41 @@
       S.snare.start(time);
     }
 
+    // ═══ Thailand birds (UR-only one-shot with diagonal volume + delay-time gradient) ═══
+    //   Chain: Player → FeedbackDelay → Gain → master
+    //   When pointer is in UR:
+    //     volume     = blend along UR's inner-BL → outer-TR diagonal (0 → 1)
+    //     delay time = same blend, mapped 0.05s → 2.0s
+    //   Plays start-to-finish per UR entry: retriggers from 0 once the previous playthrough
+    //   has ended (so re-entering UR mid-play doesn't restart; re-entering after end does).
+    S.thaiBirdsReady = false;
+    S.thaiBirdsPlaying = false;
+    const thaiUrl = base + 'simple/samples/thailand-birds.wav';
+    try {
+      const head = await fetch(thaiUrl, { method: 'HEAD' });
+      if (head.ok) {
+        // Gain (the position-driven volume), Delay (medium-heavy feedback, modulated time).
+        S.thaiBirdsGain = new Tone.Gain(0).connect(sGain);
+        S.thaiBirdsDelay = new Tone.FeedbackDelay({
+          delayTime: 0.5,
+          feedback: 0.55,   // medium-heavy
+          wet: 0.45         // dry/wet blend so the dry sample still has presence
+        }).connect(S.thaiBirdsGain);
+        S.thaiBirds = new Tone.Player({
+          url: thaiUrl,
+          loop: false,
+          onstop: () => { S.thaiBirdsPlaying = false; }
+        }).connect(S.thaiBirdsDelay);
+        await Tone.loaded();
+        S.thaiBirdsReady = true;
+        console.log('[sampler] thailand-birds loaded.');
+      } else {
+        console.warn('[sampler] thailand-birds.wav not deployed (HTTP', head.status, '). UR bird layer silent until you drop the file at play/worlds/simple/samples/thailand-birds.wav.');
+      }
+    } catch (e) {
+      console.warn('[sampler] thailand-birds.wav probe failed; UR bird layer disabled. Error:', e);
+    }
+
     await Tone.loaded();
     console.log('[sampler] simple samples loaded');
 
@@ -675,6 +710,46 @@
     S.ulKickLoop.start(0);
     S.ulHatLoop.start(0);
     S.ulTicker.start(0);
+
+    // ═══ Thailand birds controller: UR-entry trigger + continuous gain/delay-time updates ═══
+    if (S.thaiBirdsReady) {
+      let urActive = false;
+      const RAMP_BIRD = 0.08;
+      S.thaiBirdsTicker = new Tone.Loop(time => {
+        const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+        const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+        const inUR = getActiveQuadrant(x, y) === 'UR';
+
+        if (inUR) {
+          // UR local coords: lx,ly ∈ [0,1] with (0,0) = inner BL of UR (global 0.5,0.5)
+          //                                       (1,1) = outer TR of UR (global 1,1)
+          const { lx, ly } = localCoords('UR', x, y);
+          // Diagonal blend from inner-BL (t=0) to outer-TR (t=1).
+          const t = (lx + ly) / 2;
+          const vol = t;                            // 0 → 1
+          const dly = 0.05 + t * (2.0 - 0.05);      // 0.05s → 2.0s
+          S.thaiBirdsGain.gain.rampTo(vol, RAMP_BIRD);
+          S.thaiBirdsDelay.delayTime.rampTo(dly, RAMP_BIRD);
+
+          // Entry edge: retrigger if not currently playing.
+          if (!urActive) {
+            urActive = true;
+            if (!S.thaiBirdsPlaying) {
+              try {
+                S.thaiBirds.stop();
+              } catch (_) {}
+              S.thaiBirdsPlaying = true;
+              S.thaiBirds.start(time, 0);
+            }
+          }
+        } else {
+          // Outside UR: silence the gate; sample keeps playing (or finishes) in background.
+          S.thaiBirdsGain.gain.rampTo(0, 0.2);
+          urActive = false;
+        }
+      }, 0.033); // ~30Hz
+      S.thaiBirdsTicker.start(0);
+    }
 
     // ═══ Crossfade looper helper ═══
     // Spawns a fresh Tone.Player every (duration - fadeSec) seconds, each with its own
