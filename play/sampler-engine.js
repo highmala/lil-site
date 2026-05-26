@@ -194,6 +194,9 @@
       return Math.max(0, 1 - d);      // 1 at TL, 0 at BR
     }
 
+    // Chaos flag: enabled in Simple2, off in Simple. Read from world JSON.
+    const ulChaos = !!(world.ul && world.ul.chaos);
+
     let ulKickStep = 0;
     S.ulKickLoop = new Tone.Loop(time => {
       const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
@@ -202,11 +205,11 @@
       const { lx, ly } = localCoords('UL', x, y);
       const numHits = Math.round(ly * 15) + 1; // 1..16
       if (isHitAtStep(ulKickStep, numHits, 16)) {
-        // Corner-chaos: 33% chance (scaled by corner proximity) to play ANY BD sample reversed.
-        const cornerF = ulCornerFactor(lx, ly);
-        const reverseChance = 0.33 * cornerF;
         const replaceChance = ly * 0.75; // existing kickAlt swap
         const pickAlt = Math.random() < replaceChance;
+        // Corner-chaos (Simple2 only): 33% chance (scaled by corner proximity) to play reversed.
+        const cornerF = ulChaos ? ulCornerFactor(lx, ly) : 0;
+        const reverseChance = 0.33 * cornerF;
         if (Math.random() < reverseChance) {
           if (pickAlt) S.ulKickAltReverse.start(time);
           else         S.ulKickReverse.start(time);
@@ -228,26 +231,30 @@
       const mirroredLx = 1 - lx;
       const numHits = Math.round(mirroredLx * 31) + 1; // 1..32
       if (isHitAtStep(ulHatStep, numHits, 32)) {
-        // Corner-chaos: pick ONE variant via a single dice roll, mutually exclusive.
-        // At the TL corner (cornerF=1): 50% reverse, 20% octave-down, 10% roll, 20% normal.
-        // Toward BR: probabilities scale down toward 0 (so plain hihat dominates).
-        const cornerF = ulCornerFactor(lx, ly);
-        const pReverse = 0.50 * cornerF;
-        const pOctLow  = 0.20 * cornerF;
-        const pRoll    = 0.10 * cornerF;
-        const r = Math.random();
-        if (r < pReverse) {
-          S.ulHihatReverse.start(time);
-        } else if (r < pReverse + pOctLow) {
-          S.ulHihatLow.start(time);
-        } else if (r < pReverse + pOctLow + pRoll) {
-          // 4 hits in a row at 32nd-note spacing (in UL's half-time grid).
-          // UL hat step is 16n long → spacing = 16n / 4 = 64n. Use the pool so hits don't truncate.
-          const stepDur = Tone.Time('16n').toSeconds();
-          const spacing = stepDur / 4;
-          for (let i = 0; i < 4; i++) S.ulHihatRollPool[i].start(time + spacing * i);
-        } else {
+        if (!ulChaos) {
           S.ulHihat.start(time);
+        } else {
+          // Corner-chaos (Simple2 only): pick ONE variant via a single dice roll, mutually exclusive.
+          // At the TL corner (cornerF=1): 50% reverse, 20% octave-down, 10% roll, 20% normal.
+          // Toward BR: probabilities scale down toward 0 (so plain hihat dominates).
+          const cornerF = ulCornerFactor(lx, ly);
+          const pReverse = 0.50 * cornerF;
+          const pOctLow  = 0.20 * cornerF;
+          const pRoll    = 0.10 * cornerF;
+          const r = Math.random();
+          if (r < pReverse) {
+            S.ulHihatReverse.start(time);
+          } else if (r < pReverse + pOctLow) {
+            S.ulHihatLow.start(time);
+          } else if (r < pReverse + pOctLow + pRoll) {
+            // 4 hits in a row at 32nd-note spacing (in UL's half-time grid).
+            // UL hat step is 16n long → spacing = 16n / 4. Use the pool so hits don't truncate.
+            const stepDur = Tone.Time('16n').toSeconds();
+            const spacing = stepDur / 4;
+            for (let i = 0; i < 4; i++) S.ulHihatRollPool[i].start(time + spacing * i);
+          } else {
+            S.ulHihat.start(time);
+          }
         }
       }
       ulHatStep = (ulHatStep + 1) % 32;
@@ -350,7 +357,7 @@
   }
 
   async function init(worldName) {
-    if (worldName === 'simple') return initSimple(worldName);
+    if (worldName === 'simple' || worldName === 'simple2') return initSimple(worldName);
 
     console.log('[sampler] init:', worldName);
 
@@ -685,7 +692,7 @@
 
       // Simple world: 4-quadrant routing. UR sequencers self-gate.
       // BL system gets continuous gain + filter modulation here.
-      if (world.meta && world.meta.name === 'Simple') {
+      if (world.meta && (world.meta.name === 'Simple' || world.meta.name === 'Simple2')) {
         sGain.gain.value = world.mix.master;
 
         const sx = (typeof xVal !== 'undefined') ? xVal : 0.5;
