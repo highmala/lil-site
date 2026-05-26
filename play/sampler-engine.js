@@ -18,6 +18,26 @@
     return 'fs';
   }
 
+  // ═══ Play-event broadcast ═══
+  // The UI sets window._samplerEngine.onPlay = (slot, time) => {...} to subscribe.
+  // bindSlot() monkey-patches a player's .start so every trigger fires the hook.
+  function notifyPlay(slot, time) {
+    const eng = window._samplerEngine;
+    if (eng && typeof eng.onPlay === 'function') {
+      try { eng.onPlay(slot, time); } catch (_) {}
+    }
+  }
+  function bindSlot(player, slot) {
+    if (!player || player._slotBound === slot) return player;
+    const origStart = player.start.bind(player);
+    player.start = function(time) {
+      notifyPlay(slot, time);
+      return origStart.apply(player, arguments);
+    };
+    player._slotBound = slot;
+    return player;
+  }
+
   // ═══ Euclidean-style hit distribution: spread N hits evenly across `total` steps ═══
   function isHitAtStep(stepIdx, numHits, total) {
     total = total || 16;
@@ -71,6 +91,7 @@
     S.kick.volume.value    = -5;
     S.kickAlt.volume.value = -5;
     S.hihat.volume.value   = -5;
+    bindSlot(S.kick, 'kick'); bindSlot(S.kickAlt, 'kickAlt'); bindSlot(S.hihat, 'hihat');
 
     // BL system: "charlie" with 10s crossfade loop → lowpass filter → gain → master
     S.blGain   = new Tone.Gain(0).connect(sGain);
@@ -118,6 +139,7 @@
     S.ulKick.fan(sGain, S.ulSendBus);
     S.ulKickAlt.fan(sGain, S.ulSendBus);
     S.ulHihat.fan(sGain, S.ulSendBus);
+    bindSlot(S.ulKick, 'kick'); bindSlot(S.ulKickAlt, 'kickAlt'); bindSlot(S.ulHihat, 'hihat');
 
     // ═══ UL corner variants ═══
     // Build reversed and pitched variants for the corner-chaos probabilities.
@@ -136,12 +158,16 @@
     S.ulHihatReverse  = reversedPlayer(S.ulHihat.buffer, -5);
     S.ulKickReverse   = reversedPlayer(S.ulKick.buffer, -5);
     S.ulKickAltReverse= reversedPlayer(S.ulKickAlt.buffer, -5);
+    bindSlot(S.ulHihatReverse, 'hihat');
+    bindSlot(S.ulKickReverse, 'kick');
+    bindSlot(S.ulKickAltReverse, 'kickAlt');
 
     // Octave-down hihat: playbackRate 0.5 (one octave lower).
     S.ulHihatLow = new Tone.Player(base + 'simple/samples/hihat.wav');
     S.ulHihatLow.playbackRate = 0.5;
     S.ulHihatLow.volume.value = -5;
     S.ulHihatLow.fan(sGain, S.ulSendBus);
+    bindSlot(S.ulHihatLow, 'hihat');
 
     // Roll pool: 4 separate hihat players so 4 rapid 32nd hits don't cut each other off.
     S.ulHihatRollPool = [];
@@ -149,6 +175,7 @@
       const p = new Tone.Player(S.ulHihat.buffer);
       p.volume.value = -5;
       p.fan(sGain, S.ulSendBus);
+      bindSlot(p, 'hihat');
       S.ulHihatRollPool.push(p);
     }
 
@@ -376,6 +403,7 @@
     S.kick.volume.value    = -5;
     S.kickAlt.volume.value = -5;
     S.hihat.volume.value   = -5;
+    bindSlot(S.kick, 'kick'); bindSlot(S.kickAlt, 'kickAlt'); bindSlot(S.hihat, 'hihat');
 
     // BL system: "charlie" with 10s crossfade loop → lowpass filter → gain → master
     S.blGain   = new Tone.Gain(0).connect(sGain);
@@ -423,6 +451,7 @@
     S.ulKick.fan(sGain, S.ulSendBus);
     S.ulKickAlt.fan(sGain, S.ulSendBus);
     S.ulHihat.fan(sGain, S.ulSendBus);
+    bindSlot(S.ulKick, 'kick'); bindSlot(S.ulKickAlt, 'kickAlt'); bindSlot(S.ulHihat, 'hihat');
 
     // ═══ UL corner variants ═══
     // Build reversed and pitched variants for the corner-chaos probabilities.
@@ -441,12 +470,16 @@
     S.ulHihatReverse  = reversedPlayer(S.ulHihat.buffer, -5);
     S.ulKickReverse   = reversedPlayer(S.ulKick.buffer, -5);
     S.ulKickAltReverse= reversedPlayer(S.ulKickAlt.buffer, -5);
+    bindSlot(S.ulHihatReverse, 'hihat');
+    bindSlot(S.ulKickReverse, 'kick');
+    bindSlot(S.ulKickAltReverse, 'kickAlt');
 
     // Octave-down hihat: playbackRate 0.5 (one octave lower).
     S.ulHihatLow = new Tone.Player(base + 'simple/samples/hihat.wav');
     S.ulHihatLow.playbackRate = 0.5;
     S.ulHihatLow.volume.value = -5;
     S.ulHihatLow.fan(sGain, S.ulSendBus);
+    bindSlot(S.ulHihatLow, 'hihat');
 
     // Roll pool: 4 separate hihat players so 4 rapid 32nd hits don't cut each other off.
     S.ulHihatRollPool = [];
@@ -454,6 +487,7 @@
       const p = new Tone.Player(S.ulHihat.buffer);
       p.volume.value = -5;
       p.fan(sGain, S.ulSendBus);
+      bindSlot(p, 'hihat');
       S.ulHihatRollPool.push(p);
     }
 
@@ -481,6 +515,7 @@
         S.snare = new Tone.Player(snareUrl);
         S.snare.volume.value = -4;
         S.snare.fan(sGain, S.snareWetSend);
+        bindSlot(S.snare, 'snare');
         // Tone.loaded() resolves when all in-flight buffers are ready.
         await Tone.loaded();
         S.snareReady = true;
@@ -1577,6 +1612,7 @@
         await Tone.loaded();
         disposeQuietly(S[slot]);
         S[slot] = urPlayer;
+        bindSlot(urPlayer, slot);
         if (slot === 'snare') S.snareReady = true;
 
         // ─── UL twin + chaos variants (no UL snare — snare is shared) ───
@@ -1590,6 +1626,7 @@
           ulPlayer.fan(sGain, S.ulSendBus);
           disposeQuietly(S[ulSlot]);
           S[ulSlot] = ulPlayer;
+          bindSlot(ulPlayer, slot);
 
           // Reversed chaos variant (cloned buffer with reverse=true).
           // Slot names: ulHihatReverse / ulKickReverse / ulKickAltReverse
@@ -1602,6 +1639,7 @@
             revPlayer.fan(sGain, S.ulSendBus);
             disposeQuietly(S[reverseSlot]);
             S[reverseSlot] = revPlayer;
+            bindSlot(revPlayer, slot);
           }
 
           // Hihat-only extras: octave-down player + 4-voice roll pool.
@@ -1613,6 +1651,7 @@
               low.fan(sGain, S.ulSendBus);
               disposeQuietly(S.ulHihatLow);
               S.ulHihatLow = low;
+              bindSlot(low, 'hihat');
             }
             if (S.ulHihatRollPool && S.ulHihatRollPool.length) {
               const poolSize = S.ulHihatRollPool.length;
@@ -1622,6 +1661,7 @@
                 const rp = new Tone.Player(toneBuf);
                 rp.volume.value = -5;
                 rp.fan(sGain, S.ulSendBus);
+                bindSlot(rp, 'hihat');
                 S.ulHihatRollPool.push(rp);
               }
             }
@@ -1632,6 +1672,21 @@
       }
 
       const replaced = labels.slice(0, count).join(' / ');
+
+      // Expose the recording for the UI waveform display.
+      // chosenSlots is sorted by descending strength to match labels[0..count-1].
+      const chosenSlots = chosen.slice(0, count).map((c, i) => ({
+        frame: c.frame, hop, strength: c.strength, slot: labels[i]
+      }));
+      window._samplerEngine.lastRecording = {
+        buffer: captureBuf,
+        sampleRate,
+        chosenSlots,
+        sliceLenSec,
+        durationSec
+      };
+      try { if (typeof window._samplerEngine.onRecording === 'function') window._samplerEngine.onRecording(window._samplerEngine.lastRecording); } catch(_) {}
+
       report({ state: 'done', message: 'Replaced ' + replaced + ' on both UR and UL with ' + count + ' recorded transients.' });
       return true;
     }

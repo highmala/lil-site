@@ -246,6 +246,27 @@
       max-width: 60vw;
     }
 
+    /* Waveform display next to record button (Simple worlds only) */
+    #waveform-wrap {
+      position: absolute;
+      bottom: 4vh;
+      left: calc(4vw + 72px); /* sit right of the 56px record button + a bit of gap */
+      width: 240px;
+      height: 56px;
+      display: none;
+      pointer-events: none;
+      z-index: 30;
+    }
+    body.world-simple #waveform-wrap { display: block; }
+    #waveform-canvas {
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.35);
+      border: 1px solid rgba(255,255,255,0.2);
+      border-radius: 4px;
+      display: block;
+    }
+
     /* Version */
     #version {
       position: absolute;
@@ -289,6 +310,7 @@
     <button id="mute-btn">mute</button>
     <button id="record-btn" title="Record 15s and replace samples" aria-label="Record"></button>
     <div id="record-status"></div>
+    <div id="waveform-wrap"><canvas id="waveform-canvas" width="480" height="112"></canvas></div>
     <div id="world-selector" style="position:absolute; top:10px; right:10px; font-size:12px; opacity:0.6;">
       <a href="?world=nature" style="color:inherit; margin:0 5px;">forest</a>
       <a href="?world=vocal" style="color:inherit; margin:0 5px;">voices</a>
@@ -883,6 +905,170 @@ let isMuted = false;
 const recordBtnEl = document.getElementById('record-btn');
 const recordStatusEl = document.getElementById('record-status');
 let isRecording = false;
+
+// ─── WAVEFORM DISPLAY ────────────────────────────────────────────────
+// Renders the most recent 15s recording with colored overlays on the chosen
+// transient slices. Each slot blinks when its sample plays.
+(() => {
+  const wrap = document.getElementById('waveform-wrap');
+  const canvas = document.getElementById('waveform-canvas');
+  if (!wrap || !canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  // Internal-resolution canvas (matches the width/height attrs we set in HTML).
+  // Re-resolve on first paint in case devicePixelRatio changes.
+  function fitCanvas() {
+    const cssW = wrap.clientWidth || 240;
+    const cssH = wrap.clientHeight || 56;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width  = Math.round(cssW * dpr);
+    canvas.height = Math.round(cssH * dpr);
+    canvas.style.width  = cssW + 'px';
+    canvas.style.height = cssH + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+
+  const SLOT_COLORS = {
+    snare:   '#ff4d6d',   // hot pink — the loudest, most impactful hit
+    kick:    '#ffa64d',   // orange    — BD1
+    kickAlt: '#ffe14d',   // yellow    — BD2
+    hihat:   '#4dd2ff'    // cyan      — highs
+  };
+
+  let rec = null;             // { buffer, sampleRate, chosenSlots, sliceLenSec, durationSec }
+  // Per-slot flash state: { kick: { t: timestampMs }, ... } — set on play, decays in ~150ms.
+  const flash = {};
+
+  function drawWaveform() {
+    fitCanvas();
+    const cssW = parseFloat(canvas.style.width);
+    const cssH = parseFloat(canvas.style.height);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    if (!rec || !rec.buffer) {
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '10px ComicSans, "Comic Sans MS", cursive';
+      ctx.textBaseline = 'middle';
+      ctx.textAlign = 'center';
+      ctx.fillText('record to populate', cssW / 2, cssH / 2);
+      return;
+    }
+
+    const buf = rec.buffer;
+    const sr = rec.sampleRate;
+    const N = buf.length;
+    const samplesPerPx = Math.max(1, Math.floor(N / cssW));
+
+    // Draw waveform as min/max envelope per column
+    ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    for (let x = 0; x < cssW; x++) {
+      const i0 = x * samplesPerPx;
+      const i1 = Math.min(N, i0 + samplesPerPx);
+      let mn = 0, mx = 0;
+      for (let i = i0; i < i1; i++) {
+        const v = buf[i];
+        if (v < mn) mn = v;
+        if (v > mx) mx = v;
+      }
+      const yMid = cssH / 2;
+      const y0 = yMid - mx * (cssH * 0.45);
+      const y1 = yMid - mn * (cssH * 0.45);
+      ctx.moveTo(x + 0.5, y0);
+      ctx.lineTo(x + 0.5, y1);
+    }
+    ctx.stroke();
+
+    // Slot overlays
+    const totalSec = N / sr;
+    const sliceSec = rec.sliceLenSec || 0.2;
+    const now = performance.now();
+    for (const cs of rec.chosenSlots) {
+      const tStart = (cs.frame * cs.hop) / sr;
+      const x = Math.floor((tStart / totalSec) * cssW);
+      const w = Math.max(2, Math.ceil((sliceSec / totalSec) * cssW));
+      const color = SLOT_COLORS[cs.slot] || '#ffffff';
+
+      // Flash level (0..1): fades over 150ms after the latest play of this slot.
+      const f = flash[cs.slot];
+      let flashLvl = 0;
+      if (f) {
+        const dt = now - f.t;
+        flashLvl = Math.max(0, 1 - dt / 150);
+      }
+      const baseAlpha = 0.20 + flashLvl * 0.55;
+      ctx.fillStyle = hexToRgba(color, baseAlpha);
+      ctx.fillRect(x, 0, w, cssH);
+      // Top edge marker
+      ctx.fillStyle = hexToRgba(color, 0.8 + flashLvl * 0.2);
+      ctx.fillRect(x, 0, w, 2);
+
+      // Tiny label at bottom
+      ctx.fillStyle = hexToRgba(color, 0.9);
+      ctx.font = '8px ComicSans, "Comic Sans MS", cursive';
+      ctx.textBaseline = 'bottom';
+      ctx.textAlign = 'left';
+      ctx.fillText(cs.slot, x + 2, cssH - 2);
+    }
+  }
+
+  function hexToRgba(hex, a) {
+    const h = hex.replace('#', '');
+    const r = parseInt(h.substring(0, 2), 16);
+    const g = parseInt(h.substring(2, 4), 16);
+    const b = parseInt(h.substring(4, 6), 16);
+    return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+  }
+
+  // Animation loop while flashing
+  let animActive = false;
+  function tick() {
+    drawWaveform();
+    const now = performance.now();
+    let anyFresh = false;
+    for (const k in flash) {
+      if (now - flash[k].t < 150) { anyFresh = true; break; }
+    }
+    if (anyFresh) requestAnimationFrame(tick);
+    else animActive = false;
+  }
+  function startFlashAnim() {
+    if (animActive) return;
+    animActive = true;
+    requestAnimationFrame(tick);
+  }
+
+  function attachToEngine() {
+    const eng = window._samplerEngine;
+    if (!eng) { setTimeout(attachToEngine, 200); return; }
+    eng.onRecording = (r) => { rec = r; drawWaveform(); };
+    eng.onPlay = (slot, scheduleTime) => {
+      // scheduleTime is an AudioContext timestamp (future-dated by Tone). Delay the
+      // visual flash so it lines up with when the sound is actually audible.
+      let delayMs = 0;
+      try {
+        if (typeof scheduleTime === 'number' && typeof Tone !== 'undefined') {
+          delayMs = Math.max(0, (scheduleTime - Tone.now()) * 1000);
+        }
+      } catch (_) {}
+      if (delayMs > 1) {
+        setTimeout(() => {
+          flash[slot] = { t: performance.now() };
+          startFlashAnim();
+        }, delayMs);
+      } else {
+        flash[slot] = { t: performance.now() };
+        startFlashAnim();
+      }
+    };
+    if (eng.lastRecording) { rec = eng.lastRecording; drawWaveform(); }
+    else drawWaveform();
+  }
+  attachToEngine();
+
+  window.addEventListener('resize', drawWaveform);
+})();
 if (recordBtnEl) {
   recordBtnEl.addEventListener('click', async (e) => {
     e.stopPropagation();
