@@ -1309,39 +1309,100 @@
         return { slice, strength: c.strength };
       });
 
-      // 5. Build Tone audio buffers and swap into S.kick / S.kickAlt / S.hihat / S.snare
-      //    Strongest → kick, 2nd → kickAlt, 3rd → hihat, 4th → snare (Simple2 only).
-      //    The snare slot is wired to fan to (sGain, S.snareWetSend) to keep the parallel
-      //    reverb send working. If S.snareWetSend doesn't exist (Simple world), we just fan
-      //    to sGain.
+      // 5. Build Tone audio buffers and swap into BOTH the UR slots (S.kick / S.kickAlt /
+      //    S.hihat / S.snare) AND their UL counterparts (S.ulKick / S.ulKickAlt / S.ulHihat
+      //    + chaos variants S.ulKickReverse / S.ulKickAltReverse / S.ulHihatReverse /
+      //    S.ulHihatLow / S.ulHihatRollPool). The snare lives on a shared S.snare instance
+      //    used by both squares (snare zone spans full width), so no UL snare twin needed.
+      //
+      //    Order in `chosen` (by descending strength):
+      //      i=0 → kick, i=1 → kickAlt, i=2 → hihat, i=3 → snare
+
+      function disposeQuietly(node) { try { if (node) node.dispose(); } catch(_) {} }
+
+      // Build a Tone.ToneAudioBuffer wrapping a Float32 slice so we can clone-reverse it.
+      function bufferFromSlice(data) {
+        const toneCtx = Tone.getContext().rawContext;
+        const ab = toneCtx.createBuffer(1, data.length, sampleRate);
+        ab.getChannelData(0).set(data);
+        return new Tone.ToneAudioBuffer(ab);
+      }
+
       const labels = ['kick', 'kickAlt', 'hihat', 'snare'];
       const count = Math.min(slices.length, 4);
       for (let i = 0; i < count; i++) {
         const data = slices[i].slice;
-        // Create AudioBuffer in Tone's context
-        const toneCtx = Tone.getContext().rawContext;
-        const ab = toneCtx.createBuffer(1, data.length, sampleRate);
-        ab.getChannelData(0).set(data);
-
+        const toneBuf = bufferFromSlice(data);
         const slot = labels[i];
-        const newPlayer = new Tone.Player(ab);
-        // Wire the new player exactly like the original for that slot.
+
+        // ─── UR slot (the existing behavior) ───
+        const urPlayer = new Tone.Player(toneBuf);
         if (slot === 'snare' && S.snareWetSend) {
-          newPlayer.fan(sGain, S.snareWetSend);
-          newPlayer.volume.value = -4;
+          urPlayer.fan(sGain, S.snareWetSend);
+          urPlayer.volume.value = -4;
         } else {
-          newPlayer.connect(sGain);
-          newPlayer.volume.value = -5; // match UR drum balance
+          urPlayer.connect(sGain);
+          urPlayer.volume.value = -5;
         }
         await Tone.loaded();
-
-        try { if (S[slot]) S[slot].dispose(); } catch(_) {}
-        S[slot] = newPlayer;
+        disposeQuietly(S[slot]);
+        S[slot] = urPlayer;
         if (slot === 'snare') S.snareReady = true;
+
+        // ─── UL twin + chaos variants (no UL snare — snare is shared) ───
+        if (slot === 'snare') continue;
+
+        const ulSlot = 'ul' + slot.charAt(0).toUpperCase() + slot.slice(1); // ulKick / ulKickAlt / ulHihat
+        if (S.ulSendBus) {
+          // Fresh UL player on the new buffer, fanned to dry + Portal FX send.
+          const ulPlayer = new Tone.Player(toneBuf);
+          ulPlayer.volume.value = -5;
+          ulPlayer.fan(sGain, S.ulSendBus);
+          disposeQuietly(S[ulSlot]);
+          S[ulSlot] = ulPlayer;
+
+          // Reversed chaos variant (cloned buffer with reverse=true).
+          // Slot names: ulHihatReverse / ulKickReverse / ulKickAltReverse
+          const reverseSlot = ulSlot + 'Reverse';
+          if (S[reverseSlot]) {
+            const revBuf = toneBuf.slice(0); // clone
+            revBuf.reverse = true;
+            const revPlayer = new Tone.Player(revBuf);
+            revPlayer.volume.value = -5;
+            revPlayer.fan(sGain, S.ulSendBus);
+            disposeQuietly(S[reverseSlot]);
+            S[reverseSlot] = revPlayer;
+          }
+
+          // Hihat-only extras: octave-down player + 4-voice roll pool.
+          if (slot === 'hihat') {
+            if (S.ulHihatLow) {
+              const low = new Tone.Player(toneBuf);
+              low.playbackRate = 0.5;
+              low.volume.value = -5;
+              low.fan(sGain, S.ulSendBus);
+              disposeQuietly(S.ulHihatLow);
+              S.ulHihatLow = low;
+            }
+            if (S.ulHihatRollPool && S.ulHihatRollPool.length) {
+              const poolSize = S.ulHihatRollPool.length;
+              for (const p of S.ulHihatRollPool) disposeQuietly(p);
+              S.ulHihatRollPool = [];
+              for (let j = 0; j < poolSize; j++) {
+                const rp = new Tone.Player(toneBuf);
+                rp.volume.value = -5;
+                rp.fan(sGain, S.ulSendBus);
+                S.ulHihatRollPool.push(rp);
+              }
+            }
+          }
+        }
+
+        await Tone.loaded();
       }
 
       const replaced = labels.slice(0, count).join(' / ');
-      report({ state: 'done', message: 'Replaced ' + replaced + ' with ' + count + ' recorded transients.' });
+      report({ state: 'done', message: 'Replaced ' + replaced + ' on both UR and UL with ' + count + ' recorded transients.' });
       return true;
     }
   };
