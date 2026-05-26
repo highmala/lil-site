@@ -2,11 +2,11 @@
   "meta": {
     "name": "Simple",
     "artist": "angelxenakis",
-    "description": "4-quadrant sampler world. UR: kick density (Y) + hihat density (X). BL: looped 'charlie' sample with lowpass filter that opens toward UR of the quadrant. UL/BR: TBD."
+    "description": "4-quadrant sampler world. UR: kick density (Y) + hihat density (X). UL: mirror of UR (hihat density grows toward left edge). BL: charlie sample with lowpass filter. BR: rain sample with mirrored lowpass filter. BL+BR crossfade and extend up into UL/UR via 2D audibility rectangles."
   },
   "tempo": {
-    "sleep": 111,
-    "play": 111,
+    "sleep": 55.5,
+    "play": 55.5,
     "glowMult": 1.0
   },
   "mix": {

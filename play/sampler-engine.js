@@ -116,11 +116,45 @@
       urHatStep = (urHatStep + 1) % 32;
     }, '32n');
 
-    // ═══ UL / BL / BR systems: placeholders (silent until samples + logic provided) ═══
-    // When angelxenakis drops samples and describes logic, we'll wire them up here.
+    // ═══ UL system: horizontal mirror of UR ═══
+    // Kick density (Y, same as UR) + hihat density (X, mirrored: density grows toward LEFT edge).
+    // Uses its own independent step counters so leaving UL doesn't reset UR phase.
+    let ulKickStep = 0;
+    S.ulKickLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UL') { ulKickStep = (ulKickStep + 1) % 16; return; }
+      const { ly } = localCoords('UL', x, y);
+      const numHits = Math.round(ly * 15) + 1; // 1..16
+      if (isHitAtStep(ulKickStep, numHits, 16)) {
+        const replaceChance = ly * 0.75;
+        if (Math.random() < replaceChance) S.kickAlt.start(time);
+        else                                S.kick.start(time);
+      }
+      ulKickStep = (ulKickStep + 1) % 16;
+    }, '16n');
+
+    let ulHatStep = 0;
+    S.ulHatLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+      if (getActiveQuadrant(x, y) !== 'UL') { ulHatStep = (ulHatStep + 1) % 32; return; }
+      const { lx } = localCoords('UL', x, y);
+      // Mirror: density grows toward the LEFT edge (low lx = high density)
+      const mirroredLx = 1 - lx;
+      const numHits = Math.round(mirroredLx * 31) + 1; // 1..32
+      if (isHitAtStep(ulHatStep, numHits, 32)) {
+        S.hihat.start(time);
+      }
+      ulHatStep = (ulHatStep + 1) % 32;
+    }, '32n');
+
+    // ═══ BL / BR systems: handled by crossfade looper + update() filter routing ═══
 
     sLoop.start(0);
     S.hatLoop.start(0);
+    S.ulKickLoop.start(0);
+    S.ulHatLoop.start(0);
 
     // ═══ Crossfade looper helper ═══
     // Spawns a fresh Tone.Player every (duration - fadeSec) seconds, each with its own
@@ -154,11 +188,11 @@
     startCrossfadeLooper(S.blBuffer, S.blFilter, 10, 5,  'BL/charlie');
     startCrossfadeLooper(S.brBuffer, S.brFilter, 10, -6, 'BR/rain');
 
-    Tone.getTransport().bpm.value = world.tempo.play; // 111
+    Tone.getTransport().bpm.value = world.tempo.play;
     Tone.getTransport().start();
 
     sStarted = true;
-    console.log('[sampler] simple 4-quadrant sequencer running at', world.tempo.play, 'bpm (UR + BL active)');
+    console.log('[sampler] simple 4-quadrant sequencer running at', world.tempo.play, 'bpm (UR + UL + BL + BR active)');
     return true;
   }
 
