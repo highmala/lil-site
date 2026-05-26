@@ -516,12 +516,14 @@
     try {
       const head = await fetch(thaiUrl, { method: 'HEAD' });
       if (head.ok) {
-        // Gain (the position-driven volume), Delay (medium-heavy feedback, modulated time).
+        // Tape-style delay: feedback is heavy so the pitched/wobbled signal cycles back
+        // through the delay line multiple times, layering the wobble. The wet signal is
+        // prominent because that's where the pitch-bend lives — dry stays clean alongside.
         S.thaiBirdsGain = new Tone.Gain(0).connect(sGain);
         S.thaiBirdsDelay = new Tone.FeedbackDelay({
           delayTime: 0.5,
-          feedback: 0.55,   // medium-heavy
-          wet: 0.45         // dry/wet blend so the dry sample still has presence
+          feedback: 0.72,   // heavy-ish: multiple wobble repeats
+          wet: 0.6          // wet-forward, the pitched echoes are the star
         }).connect(S.thaiBirdsGain);
         S.thaiBirds = new Tone.Player({
           url: thaiUrl,
@@ -714,7 +716,19 @@
     // ═══ Thailand birds controller: UR-entry trigger + continuous gain/delay-time updates ═══
     if (S.thaiBirdsReady) {
       let urActive = false;
-      const RAMP_BIRD = 0.08;
+      // Tape-pitch-bend trick: instead of `rampTo` (which keeps cancelling/restarting at
+      // every tick), schedule a LINEAR sweep on the raw delayTime AudioParam over exactly
+      // one ticker period. That makes the DelayNode's read head move at a rate ≠ 1.0,
+      // producing the Doppler-style pitch shift while the ball moves. Faster ball motion
+      // → larger ΔdelayTime per tick → deeper pitch wobble. With heavy feedback the wobble
+      // also cycles through the tail.
+      const TICK_SEC = 0.033;
+      const VOL_RAMP = 0.08;
+      const DELAY_MIN = 0.05;
+      const DELAY_MAX = 2.0;
+      const dtParam = S.thaiBirdsDelay.delayTime;
+      // Anchor the initial value so the linear ramps have a defined start.
+      try { dtParam.setValueAtTime(DELAY_MIN, Tone.now()); } catch (_) {}
       S.thaiBirdsTicker = new Tone.Loop(time => {
         const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
         const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
@@ -726,18 +740,24 @@
           const { lx, ly } = localCoords('UR', x, y);
           // Diagonal blend from inner-BL (t=0) to outer-TR (t=1).
           const t = (lx + ly) / 2;
-          const vol = t;                            // 0 → 1
-          const dly = 0.05 + t * (2.0 - 0.05);      // 0.05s → 2.0s
-          S.thaiBirdsGain.gain.rampTo(vol, RAMP_BIRD);
-          S.thaiBirdsDelay.delayTime.rampTo(dly, RAMP_BIRD);
+          const vol = t;                                       // 0 → 1
+          const dly = DELAY_MIN + t * (DELAY_MAX - DELAY_MIN); // 0.05s → 2.0s
+
+          // Volume: standard smoothed ramp — no pitch consequence, just a clean fade.
+          S.thaiBirdsGain.gain.rampTo(vol, VOL_RAMP);
+
+          // Delay time: clean linear ramp to target across one ticker period.
+          // This is what creates the audible pitch wobble — don't smooth it further.
+          try {
+            dtParam.cancelScheduledValues(time);
+            dtParam.linearRampToValueAtTime(dly, time + TICK_SEC);
+          } catch (_) {}
 
           // Entry edge: retrigger if not currently playing.
           if (!urActive) {
             urActive = true;
             if (!S.thaiBirdsPlaying) {
-              try {
-                S.thaiBirds.stop();
-              } catch (_) {}
+              try { S.thaiBirds.stop(); } catch (_) {}
               S.thaiBirdsPlaying = true;
               S.thaiBirds.start(time, 0);
             }
