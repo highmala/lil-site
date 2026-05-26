@@ -1316,7 +1316,10 @@
       //    used by both squares (snare zone spans full width), so no UL snare twin needed.
       //
       //    Order in `chosen` (by descending strength):
-      //      i=0 → kick, i=1 → kickAlt, i=2 → hihat, i=3 → snare
+      //      i=0 → snare (loudest — the impactful backbeat hit)
+      //      i=1 → kick   (BD1)
+      //      i=2 → kickAlt (BD2)
+      //      i=3 → hihat  (quietest)
 
       function disposeQuietly(node) { try { if (node) node.dispose(); } catch(_) {} }
 
@@ -1328,7 +1331,7 @@
         return new Tone.ToneAudioBuffer(ab);
       }
 
-      const labels = ['kick', 'kickAlt', 'hihat', 'snare'];
+      const labels = ['snare', 'kick', 'kickAlt', 'hihat'];
       const count = Math.min(slices.length, 4);
       for (let i = 0; i < count; i++) {
         const data = slices[i].slice;
