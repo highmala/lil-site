@@ -71,6 +71,18 @@
   }
 
 
+  // ═══ TABBY — LIL's recording/sampling subsystem ═══
+  // Tabby is the live-mic record + transient-detect + slot-assign feature. It's
+  // designed to be portable: every world that wants user-recorded samples can
+  // plug into the same engine surface area:
+  //   - window._samplerEngine.recordAndReplaceSamples(durationSec, onState)
+  //   - window._samplerEngine.replaceSliceForSlot(slot, frame)
+  //   - window._samplerEngine.lastRecording   ({ buffer, sampleRate, chosenSlots, allTransients, hop, sliceLenSec, durationSec })
+  //   - window._samplerEngine.onRecording / .onPlay   (UI hooks)
+  // The visible UI is the waveform overlay with the "Tabby" badge in the top-left.
+  // When adding a new world that needs sampling, just wire its drum players into the
+  // same { snare, kick, kickAlt, hihat } slot names and Tabby will work out of the box.
+  //
   // ═══ Slice extraction + slot swap (shared by recordAndReplaceSamples & replaceSliceForSlot) ═══
   // Pulls a 200ms window starting at `frame*hop` from the recording buffer, peak-normalizes
   // it to ~-1 dBFS, applies a 5ms fade-out, and returns a Tone.ToneAudioBuffer.

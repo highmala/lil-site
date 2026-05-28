@@ -246,7 +246,27 @@
       max-width: 60vw;
     }
 
-    /* Waveform display next to record button (Simple worlds only) */
+    /* Tabby badge — names the recording/sampling subsystem on the waveform overlay.
+       Lives in the top-left corner of the waveform so the user knows this is "Tabby"
+       and can mentally separate it from the rest of the world. */
+    #tabby-badge {
+      position: absolute;
+      top: 6px;
+      left: 10px;
+      font-family: 'ComicSans', 'Comic Sans MS', cursive;
+      font-size: 11px;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: rgba(255,255,255,0.6);
+      pointer-events: none;
+      z-index: 2;
+    }
+    #tabby-badge::before {
+      content: '• ';
+      color: #ff4d6d;
+    }
+
+    /* Waveform display next to record button (Tabby — Simple worlds only) */
     #waveform-wrap {
       position: absolute;
       bottom: 4vh;
@@ -316,9 +336,12 @@
 
     <div id="ball"></div>
     <button id="mute-btn">mute</button>
-    <button id="record-btn" title="Record 15s and replace samples" aria-label="Record"></button>
+    <button id="record-btn" title="Tabby — record 15s and assign transients to drum slots" aria-label="Tabby record"></button>
     <div id="record-status"></div>
-    <div id="waveform-wrap"><canvas id="waveform-canvas" width="1440" height="336"></canvas></div>
+    <div id="waveform-wrap">
+      <div id="tabby-badge">Tabby</div>
+      <canvas id="waveform-canvas" width="1440" height="336"></canvas>
+    </div>
     <div id="world-selector" style="position:absolute; top:10px; right:10px; font-size:12px; opacity:0.6;">
       <a href="?world=nature" style="color:inherit; margin:0 5px;">forest</a>
       <a href="?world=vocal" style="color:inherit; margin:0 5px;">voices</a>
