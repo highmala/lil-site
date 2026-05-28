@@ -951,10 +951,12 @@ let isRecording = false;
   // Last-known band geometry (cssX, cssW per slot) — populated by drawWaveform so the hit
   // test in mousedown can use the same numbers without re-deriving them.
   let bandLayout = [];
-  // Click-to-pick: which slot is currently "armed" (the next transient-marker click
-  // will replace this slot's slice). null = no slot armed. Set by clicking a band;
-  // cleared after a successful click-assign or by clicking empty space.
-  let armedSlot = null;
+  // Click-to-pick model:
+  //   - Click a non-highlighted transient marker → picks a random slot (25% each)
+  //     and assigns that marker's slice to it. No arming step, no slot selection.
+  //   - Click on a marker that's already assigned (highlighted by a colored band)
+  //     → no-op (we don't disrupt existing assignments).
+  //   - Drag a colored band → free-form repositioning (unchanged).
   // Transient marker geometry — populated by drawWaveform for hit testing.
   let markerLayout = [];
   // Marker hit slop (px) on each side of the marker center for forgiving clicks.
@@ -963,6 +965,8 @@ let isRecording = false;
   let hoveredMarkerIdx = -1;
   // Click-vs-drag threshold (px) — mousemove below this counts as a click on mouseup.
   const CLICK_MOVE_THRESHOLD = 4;
+  // The 4 slot labels — used by the random-slot picker on marker clicks.
+  const ALL_SLOTS = ['snare', 'kick', 'kickAlt', 'hihat'];
 
   function drawWaveform() {
     fitCanvas();
@@ -1029,8 +1033,9 @@ let isRecording = false;
         let alpha = 0.25 + strNorm * 0.45;
         if (isHovered) alpha = 1.0;
         if (isOccupied && !isHovered) alpha *= 0.4;
-        // Tint markers in the armed slot's color so the user previews where the click lands.
-        const tintHex = armedSlot ? (SLOT_COLORS[armedSlot] || '#ffffff') : '#ffffff';
+        // Markers stay neutral white; occupied ones get dimmed (handled below)
+        // so the user can quickly see which transients are "free" to click.
+        const tintHex = '#ffffff';
         // Vertical guide line (full height, very faint).
         ctx.fillStyle = hexToRgba(tintHex, alpha * 0.35);
         ctx.fillRect(x - 0.5, 0, 1, cssH);
@@ -1072,10 +1077,9 @@ let isRecording = false;
         const dt = now - f.t;
         flashLvl = Math.max(0, 1 - dt / 150);
       }
-      // Outline when this slot is being dragged OR armed (click-to-pick mode).
+      // Outline when this slot is being dragged.
       const isDragging = drag && drag.slot === cs.slot;
-      const isArmed = (armedSlot === cs.slot);
-      const baseAlpha = 0.20 + flashLvl * 0.55 + (isDragging ? 0.15 : 0) + (isArmed ? 0.25 : 0);
+      const baseAlpha = 0.20 + flashLvl * 0.55 + (isDragging ? 0.15 : 0);
       ctx.fillStyle = hexToRgba(color, baseAlpha);
       ctx.fillRect(x, 0, w, cssH);
       // Top + bottom edge markers (wider for visibility at 3x size)
@@ -1087,26 +1091,12 @@ let isRecording = false;
       ctx.fillRect(x, 3, 2, cssH - 6);
       ctx.fillRect(x + w - 2, 3, 2, cssH - 6);
 
-      // Slot label. When armed, prefix with a • indicator and draw a glowing border.
+      // Slot label.
       ctx.fillStyle = hexToRgba(color, 0.95);
       ctx.font = 'bold 13px ComicSans, "Comic Sans MS", cursive';
       ctx.textBaseline = 'top';
       ctx.textAlign = 'left';
-      ctx.fillText((isArmed ? '● ' : '') + cs.slot, x + 5, 6);
-      if (isArmed) {
-        ctx.strokeStyle = hexToRgba(color, 1.0);
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x + 1, 1, w - 2, cssH - 2);
-      }
-    }
-
-    // Status hint along the bottom when a slot is armed.
-    if (armedSlot) {
-      ctx.fillStyle = hexToRgba(SLOT_COLORS[armedSlot] || '#ffffff', 0.95);
-      ctx.font = 'bold 11px ComicSans, "Comic Sans MS", cursive';
-      ctx.textBaseline = 'bottom';
-      ctx.textAlign = 'right';
-      ctx.fillText('click a transient to assign → ' + armedSlot, cssW - 8, cssH - 6);
+      ctx.fillText(cs.slot, x + 5, 6);
     }
   }
 
@@ -1209,17 +1199,11 @@ let isRecording = false;
     if (!drag) return;
     const slot = drag.slot;
     const frame = drag.pendingFrame;
-    const movedFar = drag.moved;
     drag = null;
     canvas.classList.remove('dragging');
-    // Click (no significant movement) → arm/disarm this slot for click-to-pick mode.
-    if (!movedFar) {
-      armedSlot = (armedSlot === slot) ? null : slot;
-      drawWaveform();
-      return;
-    }
     drawWaveform();
     // Drag commit: write the new slice into the engine so it actually plays from the new position.
+    // (Pure clicks on bands are now no-ops — marker clicks are the entry point for assignment.)
     if (frame != null && window._samplerEngine && typeof window._samplerEngine.replaceSliceForSlot === 'function') {
       try { await window._samplerEngine.replaceSliceForSlot(slot, frame); }
       catch (e) { console.warn('[waveform] replaceSliceForSlot failed:', e); }
@@ -1230,34 +1214,26 @@ let isRecording = false;
     if (!rec || !rec.buffer) return;
     const p = canvasPointFromEvent(ev);
 
-    // ── Click-to-pick path: if a slot is armed and the user lands near a transient
-    //    marker, treat as a click-assign — don't start a drag.
-    if (armedSlot) {
-      const m = hitTestMarker(p.x);
-      if (m) {
-        const slot = armedSlot;
-        const frame = m.frame;
-        const entry = rec.chosenSlots.find(c => c.slot === slot);
-        if (entry) entry.frame = frame;
-        armedSlot = null;
-        drawWaveform();
-        if (window._samplerEngine && typeof window._samplerEngine.replaceSliceForSlot === 'function') {
-          window._samplerEngine.replaceSliceForSlot(slot, frame)
-            .catch(e => console.warn('[waveform] replaceSliceForSlot failed:', e));
-        }
-        ev.preventDefault();
-        return;
+    // ── Click-to-pick path: if the user lands near an UNASSIGNED transient marker,
+    //    pick a random slot (25% each) and assign that frame to it. No arming, no drag.
+    const m = hitTestMarker(p.x);
+    if (m && !m.occupied) {
+      const slot = ALL_SLOTS[Math.floor(Math.random() * ALL_SLOTS.length)];
+      const frame = m.frame;
+      const entry = rec.chosenSlots.find(c => c.slot === slot);
+      if (entry) entry.frame = frame;
+      drawWaveform();
+      if (window._samplerEngine && typeof window._samplerEngine.replaceSliceForSlot === 'function') {
+        window._samplerEngine.replaceSliceForSlot(slot, frame)
+          .catch(e => console.warn('[waveform] replaceSliceForSlot failed:', e));
       }
-    }
-
-    const hit = hitTestBand(p.x);
-    if (!hit) {
-      // Clicked empty waveform area: disarm any armed slot.
-      if (armedSlot) { armedSlot = null; drawWaveform(); ev.preventDefault(); }
+      ev.preventDefault();
       return;
     }
-    // Potential drag — if pointer doesn't move much, onPointerUp will treat it as a click
-    // and arm/disarm this slot instead of committing a drag.
+
+    // ── Band drag path: clicking on a colored slot band starts a free-form drag.
+    const hit = hitTestBand(p.x);
+    if (!hit) return;
     drag = {
       slot: hit.slot,
       bandW: hit.w,
