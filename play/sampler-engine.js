@@ -1080,20 +1080,115 @@
     return true;
   }
 
-  // ═══ PENTATONIC — empty world ═══
-  // All samples and playback logic intentionally removed (angelxenakis request 2026-05-28).
-  // The world JSON keeps the scale definitions (sp/ss/fp/fs pentatonic flavors), colors,
-  // tempo, and master mix — everything needed to build a fresh sound system on top.
-  // This init does the minimum to load the world cleanly: fetch the JSON, set master gain,
-  // and expose the world object globally. No FX chain, no Tone.Players, no Loop scheduling.
+  // ═══ PENTATONIC world (2026-05-28) ═══
+  // Fresh sound system, built from scratch on a pentatonic-locked scale grid.
+  // V1 setup: a single voice 'hit1' running on a 32-step sequencer @ 55.5 BPM.
+  //   - Diagonal probability gradient: 2% per step at LD/BL corner (ss), 50% at RT/TR (fp).
+  //     Interpolated along the BL→TR diagonal: t = (x + y) / 2, p = lerp(0.02, 0.50, t).
+  //   - Pitch is randomly chosen from the dominant corner's pentatonic scale, mapped into
+  //     C1–C3 (MIDI 24–48). playbackRate = 2^((targetMidi - refMidi)/12); refMidi=48 (C3).
+  //     Rates < 1.0 mean the sample is both pitched down AND time-stretched (acceptable for hits).
+  //   - More voices ('hit 2', 'hit 3', etc.) will be added per future angelxenakis requests.
   async function initPentatonic(worldName) {
-    console.log('[sampler] init PENTATONIC (silent canvas — no samples, no playback)');
+    console.log('[sampler] init PENTATONIC (32-step sequencer @ 55.5 BPM)');
     const resp = await fetch('/play/worlds/' + worldName + '.json');
     if (!resp.ok) throw new Error('World JSON not found: ' + resp.status);
     world = await resp.json();
     console.log('[sampler] world loaded:', world.meta.name);
-    // Bare master chain so update() doesn't NPE if it's called before a new sound system is added.
+
+    // Master chain: single gain to destination. No FX yet — keep the signal path naked
+    // so we can hear the raw samples and reason about adding processing later.
     sGain = new Tone.Gain((world.mix && world.mix.master) || 0.7).toDestination();
+
+    // ── Tempo — transport drives everything.
+    const bpm = (world.tempo && world.tempo.bpm) || 55.5;
+    Tone.getTransport().bpm.value = bpm;
+
+    // ── Load 'hit 1' sample.
+    const base = '/play/worlds/';
+    const v = (world.voices && world.voices.hit1) || {};
+    const hitUrl = base + (v.sample || 'pentatonic/samples/hit-1.wav');
+    S.pentaHit1 = new Tone.Player({
+      url: hitUrl,
+      autostart: false,
+      // Each scheduled trigger is fire-and-forget; the player can overlap with itself by
+      // virtue of being re-started — but Tone.Player is monophonic. For polyphony at high
+      // probability we'd want a small voice pool. V1: monophonic is fine; at 50% on 32 steps
+      // it's already busy and an occasional cut-off adds character.
+    }).connect(sGain);
+    await Tone.loaded();
+    console.log('[sampler] PENTATONIC hit 1 loaded');
+
+    // ── Probability + pitch range from world config.
+    const pLD = (v.probability && v.probability.ld != null) ? v.probability.ld : 0.02;
+    const pRT = (v.probability && v.probability.rt != null) ? v.probability.rt : 0.50;
+    const minMidi = (v.pitchRange && v.pitchRange.minMidi != null) ? v.pitchRange.minMidi : 24; // C1
+    const maxMidi = (v.pitchRange && v.pitchRange.maxMidi != null) ? v.pitchRange.maxMidi : 48; // C3
+    const refMidi = 48; // Treat the sample as if its natural pitch is C3 (MIDI 48). Rates ≤ 1.0.
+
+    // ── Pentatonic scales per corner (pitch-class arrays from world.corners).
+    const cornerScales = {
+      sp: (world.corners && world.corners.sp && world.corners.sp.scale) || [0,2,4,7,9],
+      ss: (world.corners && world.corners.ss && world.corners.ss.scale) || [0,3,5,7,10],
+      fp: (world.corners && world.corners.fp && world.corners.fp.scale) || [0,2,5,7,9],
+      fs: (world.corners && world.corners.fs && world.corners.fs.scale) || [0,2,3,7,8]
+    };
+
+    // Helper: given pointer XY in [0,1] (where y=1 is TOP and x=1 is RIGHT), return the
+    // dominant corner key. Standard bilinear: wSP=(1-x)y, wSS=(1-x)(1-y), wFP=xy, wFS=x(1-y).
+    function dominantCorner(x, y) {
+      const wSP = (1 - x) * y;
+      const wSS = (1 - x) * (1 - y);
+      const wFP = x * y;
+      const wFS = x * (1 - y);
+      let best = 'sp', bestW = wSP;
+      if (wSS > bestW) { best = 'ss'; bestW = wSS; }
+      if (wFP > bestW) { best = 'fp'; bestW = wFP; }
+      if (wFS > bestW) { best = 'fs'; bestW = wFS; }
+      return best;
+    }
+
+    // Helper: random allowed pitch within [minMidi, maxMidi] that is a member of the
+    // given pitch-class set (mod 12). Returns a MIDI number, or refMidi if nothing fits.
+    function pickRandomPitch(scalePCs) {
+      const allowed = [];
+      for (let m = minMidi; m <= maxMidi; m++) {
+        const pc = ((m % 12) + 12) % 12;
+        if (scalePCs.includes(pc)) allowed.push(m);
+      }
+      if (!allowed.length) return refMidi;
+      return allowed[Math.floor(Math.random() * allowed.length)];
+    }
+
+    // ── 32-step sequencer. Tone.Loop at the step note interval; modulo-32 step counter so
+    // we can later add per-step patterns for additional voices.
+    const steps = (world.sequencer && world.sequencer.steps) || 32;
+    const stepNote = (world.sequencer && world.sequencer.stepNote) || '16n';
+    let stepIdx = 0;
+    sLoop = new Tone.Loop(time => {
+      const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
+      const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
+
+      // Diagonal probability: BL (0,0) → pLD, TR (1,1) → pRT, linear along (x+y)/2.
+      const t = (x + y) / 2;
+      const p = pLD + (pRT - pLD) * t;
+
+      if (Math.random() < p) {
+        const cornerKey = dominantCorner(x, y);
+        const scalePCs = cornerScales[cornerKey];
+        const targetMidi = pickRandomPitch(scalePCs);
+        const rate = Math.pow(2, (targetMidi - refMidi) / 12);
+        try {
+          S.pentaHit1.playbackRate = rate;
+          S.pentaHit1.start(time);
+        } catch (_) { /* overlap with self: Tone.Player will gracefully restart */ }
+      }
+
+      stepIdx = (stepIdx + 1) % steps;
+    }, stepNote);
+    sLoop.start(0);
+    Tone.getTransport().start();
+
     sStarted = true;
     return true;
   }

@@ -2,12 +2,14 @@
   "meta": {
     "name": "Pentatonic",
     "artist": "angelxenakis + Mananas",
-    "description": "Empty pentatonic world — all samples and playback logic removed. Currently a silent canvas with only the corner scale definitions intact, ready for a fresh sound system. Four pentatonic flavors per corner: sp=major pentatonic (0 2 4 7 9), ss=minor pentatonic (0 3 5 7 10), fp=suspended pentatonic (0 2 5 7 9), fs=hirajoshi-flavored pentatonic (0 2 3 7 8)."
+    "description": "Four pentatonic scales (one per corner). 32-step sequencer @ 55.5 BPM. 'hit 1' plays with diagonal probability: 2% per step at LD/BL corner (ss, minor pentatonic), 50% per step at RT/TR corner (fp, suspended pentatonic). Pitch is randomly chosen from the dominant corner's pentatonic scale, transposed within C1-C3."
   },
   "tempo": {
-    "sleep": 50,
-    "play": 100,
-    "glowMult": 0.85
+    "bpm": 55.5
+  },
+  "sequencer": {
+    "steps": 32,
+    "stepNote": "16n"
   },
   "barsPerChord": 3,
   "corners": {
@@ -24,5 +26,18 @@
     "fp": "#7FB069",
     "ss": "#C06C84",
     "fs": "#355C7D"
+  },
+  "voices": {
+    "hit1": {
+      "sample": "pentatonic/samples/hit-1.wav",
+      "probability": {
+        "ld": 0.02,
+        "rt": 0.50
+      },
+      "pitchRange": {
+        "minMidi": 24,
+        "maxMidi": 48
+      }
+    }
   }
 }
