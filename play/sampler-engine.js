@@ -766,22 +766,20 @@
         }
 
         S.thaiBirdsGain = new Tone.Gain(0).connect(sGain);
-        S.thaiBirdsDelay = buildAbletonStyleDelay({
-          delayTime: 0.5, maxDelay: 2.5,
-          feedback: 0.6, wet: 0.7,
-          hpHz: 80, lpHz: 5500, driveAmt: 0.2,
-          lfoHz: 0.22, lfoDepth: 0.0015
-        });
-        S.thaiBirdsDelay.output.connect(S.thaiBirdsGain);
+        // ═══ Delay disabled on TR (UR) corner per user request 2026-05-28 ═══
+        // Birds now route directly to the master gain — clean, no echoes, no pitch wobble.
+        // The buildAbletonStyleDelay helper is preserved above so it can be re-enabled
+        // by reconnecting `S.thaiBirds → S.thaiBirdsDelay.input → S.thaiBirdsGain`.
+        S.thaiBirdsDelay = null; // sentinel — controller below checks for this
 
         S.thaiBirds = new Tone.Player({
           url: thaiUrl,
           loop: false,
           onstop: () => { S.thaiBirdsPlaying = false; }
-        }).connect(S.thaiBirdsDelay.input);
+        }).connect(S.thaiBirdsGain);
         await Tone.loaded();
         S.thaiBirdsReady = true;
-        console.log('[sampler] thailand-birds loaded with Ableton-style stereo delay.');
+        console.log('[sampler] thailand-birds loaded (delay bypassed — dry signal only).');
       } else {
         console.warn('[sampler] thailand-birds.mp3 not deployed (HTTP', head.status, '). UR bird layer silent until you drop the file at play/worlds/simple/samples/thailand-birds.mp3.');
       }
@@ -973,11 +971,10 @@
       // also cycles through the tail.
       const TICK_SEC = 0.033;
       const VOL_RAMP = 0.08;
-      const DELAY_MIN = 0.05;
-      const DELAY_MAX = 2.0;
-      const dtParam = S.thaiBirdsDelay.delayTime;
-      // Anchor the initial value so the linear ramps have a defined start.
-      try { dtParam.setValueAtTime(DELAY_MIN, Tone.now()); } catch (_) {}
+      // Delay disabled on TR (UR) — dtParam is a no-op when S.thaiBirdsDelay is null.
+      const dtParam = S.thaiBirdsDelay ? S.thaiBirdsDelay.delayTime : null;
+      // Anchor the initial value so the linear ramps have a defined start (if delay present).
+      if (dtParam) { try { dtParam.setValueAtTime(0.05, Tone.now()); } catch (_) {} }
       S.thaiBirdsTicker = new Tone.Loop(time => {
         const x = (typeof xVal !== 'undefined') ? xVal : 0.5;
         const y = (typeof yVal !== 'undefined') ? yVal : 0.5;
@@ -990,7 +987,6 @@
           // Diagonal blend from inner-BL (t=0) to outer-TR (t=1).
           const t = (lx + ly) / 2;
           const vol = t;                                       // 0 → 1
-          const dly = DELAY_MIN + t * (DELAY_MAX - DELAY_MIN); // 0.05s → 2.0s
           const rate = 0.5 + t * 0.5;                          // 0.5× at inner BL → 1.0× at outer TR
 
           // Volume: standard smoothed ramp — no pitch consequence, just a clean fade.
@@ -1010,12 +1006,8 @@
             S.thaiBirds.playbackRate = rate;
           }
 
-          // Delay time: clean linear ramp to target across one ticker period.
-          // This is what creates the audible pitch wobble — don't smooth it further.
-          try {
-            dtParam.cancelScheduledValues(time);
-            dtParam.linearRampToValueAtTime(dly, time + TICK_SEC);
-          } catch (_) {}
+          // Delay disabled on TR corner — skip the delay-time ramp entirely.
+          // (If you re-enable the delay above, restore the dtParam ramp here.)
 
           // Trigger from start whenever we're in UR and the sample isn't currently
           // playing. Covers both the UR-entry edge AND the case where the sample
