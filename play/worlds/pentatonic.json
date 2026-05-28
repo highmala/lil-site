@@ -2,7 +2,7 @@
   "meta": {
     "name": "Pentatonic",
     "artist": "angelxenakis + Mananas",
-    "description": "Every corner is locked to a different 5-note scale. No wrong notes anywhere in the world — the harmonic palette shifts as you move, but you can never land on a tense or chromatic interval. Four pentatonic flavors: sp=major pentatonic (bright + playful), ss=minor pentatonic (warm + bluesy), fp=suspended pentatonic (open + floating, no thirds), fs=hirajoshi-flavored pentatonic (deep + contemplative, Japanese-ish). Uses the nature sample palette for an organic earth-toned feel."
+    "description": "Empty pentatonic world — all samples and playback logic removed. Currently a silent canvas with only the corner scale definitions intact, ready for a fresh sound system. Four pentatonic flavors per corner: sp=major pentatonic (0 2 4 7 9), ss=minor pentatonic (0 3 5 7 10), fp=suspended pentatonic (0 2 5 7 9), fs=hirajoshi-flavored pentatonic (0 2 3 7 8)."
   },
   "tempo": {
     "sleep": 50,
@@ -11,58 +11,18 @@
   },
   "barsPerChord": 3,
   "corners": {
-    "sp": {
-      "scale": [0, 2, 4, 7, 9],
-      "melDensity": 0.65,
-      "kick": 0.4,
-      "hat": 0.35,
-      "swing": 0.12
-    },
-    "ss": {
-      "scale": [0, 3, 5, 7, 10],
-      "melDensity": 0.25
-    },
-    "fp": {
-      "scale": [0, 2, 5, 7, 9],
-      "bellDensity": 0.55
-    },
-    "fs": {
-      "scale": [0, 2, 3, 7, 8],
-      "pad": 0.85,
-      "noise": 0.35
-    }
+    "sp": { "scale": [0, 2, 4, 7, 9] },
+    "ss": { "scale": [0, 3, 5, 7, 10] },
+    "fp": { "scale": [0, 2, 5, 7, 9] },
+    "fs": { "scale": [0, 2, 3, 7, 8] }
   },
   "mix": {
     "master": 0.7
-  },
-  "fx": {
-    "melReverb": 0.5,
-    "decayMin": 3.5,
-    "decayMax": 11,
-    "fbMin": 0.15,
-    "fbMax": 0.42,
-    "filtMin": 850,
-    "filtMax": 6500
   },
   "colors": {
     "sp": "#F4C95D",
     "fp": "#7FB069",
     "ss": "#C06C84",
     "fs": "#355C7D"
-  },
-  "samples": {
-    "leads": {
-      "sp": "nature/samples/lead-sp-chirp.wav",
-      "ss": "nature/samples/lead-ss-owl.wav",
-      "fp": "nature/samples/lead-fp-waterdrop.wav",
-      "fs": "nature/samples/lead-fs-wind.wav"
-    },
-    "bell": "nature/samples/bell-high.wav",
-    "pad": ["nature/samples/pad-warm.wav", "nature/samples/pad-bright.wav"],
-    "bass": "nature/samples/bass-low.wav",
-    "kick": "nature/samples/kick.wav",
-    "hat": "nature/samples/hat.wav",
-    "rim": "nature/samples/rim.wav",
-    "atmosphere": "nature/samples/atmosphere.wav"
   }
 }

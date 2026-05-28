@@ -1080,9 +1080,28 @@
     return true;
   }
 
+  // ═══ PENTATONIC — empty world ═══
+  // All samples and playback logic intentionally removed (angelxenakis request 2026-05-28).
+  // The world JSON keeps the scale definitions (sp/ss/fp/fs pentatonic flavors), colors,
+  // tempo, and master mix — everything needed to build a fresh sound system on top.
+  // This init does the minimum to load the world cleanly: fetch the JSON, set master gain,
+  // and expose the world object globally. No FX chain, no Tone.Players, no Loop scheduling.
+  async function initPentatonic(worldName) {
+    console.log('[sampler] init PENTATONIC (silent canvas — no samples, no playback)');
+    const resp = await fetch('/play/worlds/' + worldName + '.json');
+    if (!resp.ok) throw new Error('World JSON not found: ' + resp.status);
+    world = await resp.json();
+    console.log('[sampler] world loaded:', world.meta.name);
+    // Bare master chain so update() doesn't NPE if it's called before a new sound system is added.
+    sGain = new Tone.Gain((world.mix && world.mix.master) || 0.7).toDestination();
+    sStarted = true;
+    return true;
+  }
+
   async function init(worldName) {
     if (worldName === 'simple') return initSimple1(worldName);
     if (worldName === 'simple2') return initSimple2(worldName);
+    if (worldName === 'pentatonic') return initPentatonic(worldName);
 
     console.log('[sampler] init:', worldName);
 
@@ -1436,6 +1455,9 @@
 
     update: function() {
       if (!sStarted || !world) return;
+
+      // Pentatonic: silent canvas, no playback wiring — nothing to update.
+      if (world.meta && world.meta.name === 'Pentatonic') return;
 
       // Simple world: 4-quadrant routing. UR sequencers self-gate.
       // BL system gets continuous gain + filter modulation here.
