@@ -1403,7 +1403,7 @@
       const validSlots = ['snare', 'kick', 'kickAlt', 'hihat'];
       if (!validSlots.includes(slot)) return false;
       // Clamp frame so the slice stays inside the buffer.
-      const hop = (rec.chosenSlots && rec.chosenSlots[0] && rec.chosenSlots[0].hop) || 1;
+      const hop = rec.hop || (rec.chosenSlots && rec.chosenSlots[0] && rec.chosenSlots[0].hop) || 1;
       const sliceLenSamples = Math.floor(rec.sampleRate * (rec.sliceLenSec || 0.2));
       const maxFrame = Math.max(0, Math.floor((rec.buffer.length - sliceLenSamples) / hop));
       const clampedFrame = Math.max(0, Math.min(maxFrame, Math.floor(frame)));
@@ -1647,6 +1647,7 @@
       }
       candidates.sort((a, b) => b.strength - a.strength);
 
+      // Greedy NMS for the chosen 4-slot assignment (existing behavior).
       const chosen = [];
       for (const c of candidates) {
         let conflict = false;
@@ -1660,6 +1661,23 @@
           chosen.push(c);
         }
         if (chosen.length >= 4) break;
+      }
+
+      // Expanded candidate pool for click-to-pick UI (same NMS rule, larger budget).
+      // Each entry has room for a full 0.2s slice; UI shows them as clickable markers.
+      // Cap at 32 so the waveform doesn't turn into a forest of markers.
+      const allTransients = [];
+      for (const c of candidates) {
+        let conflict = false;
+        for (const k of allTransients) {
+          if (Math.abs(c.frame - k.frame) < minSpacingFrames) { conflict = true; break; }
+        }
+        if (!conflict) {
+          const startSample = c.frame * hop;
+          if (startSample + sliceLenSamples > captureBuf.length) continue;
+          allTransients.push({ frame: c.frame, strength: c.strength });
+        }
+        if (allTransients.length >= 32) break;
       }
 
       if (chosen.length < 3) {
@@ -1694,6 +1712,8 @@
         buffer: captureBuf,
         sampleRate,
         chosenSlots,
+        allTransients,   // for click-to-pick UI (markers on the waveform)
+        hop,             // shared with chosenSlots so UI can map frame ↔ time
         sliceLenSec,
         durationSec
       };

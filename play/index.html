@@ -943,7 +943,7 @@ let isRecording = false;
     hihat:   '#4dd2ff'    // cyan      — highs
   };
 
-  let rec = null;             // { buffer, sampleRate, chosenSlots, sliceLenSec, durationSec }
+  let rec = null;             // { buffer, sampleRate, chosenSlots, allTransients, hop, sliceLenSec, durationSec }
   // Per-slot flash state: { kick: { t: timestampMs }, ... } — set on play, decays in ~150ms.
   const flash = {};
   // Drag state: { slot, grabOffsetPx, startFrame, lastFramePx }
@@ -951,6 +951,18 @@ let isRecording = false;
   // Last-known band geometry (cssX, cssW per slot) — populated by drawWaveform so the hit
   // test in mousedown can use the same numbers without re-deriving them.
   let bandLayout = [];
+  // Click-to-pick: which slot is currently "armed" (the next transient-marker click
+  // will replace this slot's slice). null = no slot armed. Set by clicking a band;
+  // cleared after a successful click-assign or by clicking empty space.
+  let armedSlot = null;
+  // Transient marker geometry — populated by drawWaveform for hit testing.
+  let markerLayout = [];
+  // Marker hit slop (px) on each side of the marker center for forgiving clicks.
+  const MARKER_HIT_SLOP = 10;
+  // Hover state for visual feedback on markers.
+  let hoveredMarkerIdx = -1;
+  // Click-vs-drag threshold (px) — mousemove below this counts as a click on mouseup.
+  const CLICK_MOVE_THRESHOLD = 4;
 
   function drawWaveform() {
     fitCanvas();
@@ -993,10 +1005,58 @@ let isRecording = false;
     }
     ctx.stroke();
 
-    // Slot overlays
+    // ─── Transient markers (click-to-pick) ───
+    // Drawn UNDER the colored slot bands so the bands stay readable. Each marker is
+    // a small triangle above + below the waveform + a faint vertical guide line.
+    // Brightness scales with detection strength; hovered marker pops to full.
     const totalSec = N / sr;
     const sliceSec = rec.sliceLenSec || 0.2;
     const now = performance.now();
+    markerLayout = [];
+    if (rec.allTransients && rec.allTransients.length) {
+      let maxStr = 1e-9;
+      for (const t of rec.allTransients) if (t.strength > maxStr) maxStr = t.strength;
+      const hopForMarkers = rec.hop || (rec.chosenSlots[0] && rec.chosenSlots[0].hop) || 1;
+      const occupiedFrames = new Set();
+      for (const cs of rec.chosenSlots) occupiedFrames.add(cs.frame);
+      for (let i = 0; i < rec.allTransients.length; i++) {
+        const tr = rec.allTransients[i];
+        const tStart = (tr.frame * hopForMarkers) / sr;
+        const x = Math.floor((tStart / totalSec) * cssW);
+        const strNorm = Math.min(1, tr.strength / maxStr);
+        const isHovered = (i === hoveredMarkerIdx);
+        const isOccupied = occupiedFrames.has(tr.frame);
+        let alpha = 0.25 + strNorm * 0.45;
+        if (isHovered) alpha = 1.0;
+        if (isOccupied && !isHovered) alpha *= 0.4;
+        // Tint markers in the armed slot's color so the user previews where the click lands.
+        const tintHex = armedSlot ? (SLOT_COLORS[armedSlot] || '#ffffff') : '#ffffff';
+        // Vertical guide line (full height, very faint).
+        ctx.fillStyle = hexToRgba(tintHex, alpha * 0.35);
+        ctx.fillRect(x - 0.5, 0, 1, cssH);
+        // Triangle markers — top (pointing down) + bottom (pointing up). Drawn inside
+        // the canvas bounds so they're never clipped.
+        ctx.fillStyle = hexToRgba(tintHex, alpha);
+        ctx.beginPath();
+        ctx.moveTo(x - 6, 0);
+        ctx.lineTo(x + 6, 0);
+        ctx.lineTo(x, 8);
+        ctx.closePath();
+        ctx.moveTo(x - 6, cssH);
+        ctx.lineTo(x + 6, cssH);
+        ctx.lineTo(x, cssH - 8);
+        ctx.closePath();
+        ctx.fill();
+        if (isHovered) {
+          ctx.strokeStyle = hexToRgba(tintHex, 0.9);
+          ctx.lineWidth = 2;
+          ctx.strokeRect(x - 4, 2, 8, cssH - 4);
+        }
+        markerLayout.push({ idx: i, x, frame: tr.frame, strength: tr.strength, occupied: isOccupied });
+      }
+    }
+
+    // Slot overlays
     bandLayout = [];
     for (const cs of rec.chosenSlots) {
       const tStart = (cs.frame * cs.hop) / sr;
@@ -1012,9 +1072,10 @@ let isRecording = false;
         const dt = now - f.t;
         flashLvl = Math.max(0, 1 - dt / 150);
       }
-      // Outline when this slot is being dragged so the user sees what they grabbed.
+      // Outline when this slot is being dragged OR armed (click-to-pick mode).
       const isDragging = drag && drag.slot === cs.slot;
-      const baseAlpha = 0.20 + flashLvl * 0.55 + (isDragging ? 0.15 : 0);
+      const isArmed = (armedSlot === cs.slot);
+      const baseAlpha = 0.20 + flashLvl * 0.55 + (isDragging ? 0.15 : 0) + (isArmed ? 0.25 : 0);
       ctx.fillStyle = hexToRgba(color, baseAlpha);
       ctx.fillRect(x, 0, w, cssH);
       // Top + bottom edge markers (wider for visibility at 3x size)
@@ -1026,12 +1087,26 @@ let isRecording = false;
       ctx.fillRect(x, 3, 2, cssH - 6);
       ctx.fillRect(x + w - 2, 3, 2, cssH - 6);
 
-      // Slot label (now legible at 3x size)
+      // Slot label. When armed, prefix with a • indicator and draw a glowing border.
       ctx.fillStyle = hexToRgba(color, 0.95);
       ctx.font = 'bold 13px ComicSans, "Comic Sans MS", cursive';
       ctx.textBaseline = 'top';
       ctx.textAlign = 'left';
-      ctx.fillText(cs.slot, x + 5, 6);
+      ctx.fillText((isArmed ? '● ' : '') + cs.slot, x + 5, 6);
+      if (isArmed) {
+        ctx.strokeStyle = hexToRgba(color, 1.0);
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, 1, w - 2, cssH - 2);
+      }
+    }
+
+    // Status hint along the bottom when a slot is armed.
+    if (armedSlot) {
+      ctx.fillStyle = hexToRgba(SLOT_COLORS[armedSlot] || '#ffffff', 0.95);
+      ctx.font = 'bold 11px ComicSans, "Comic Sans MS", cursive';
+      ctx.textBaseline = 'bottom';
+      ctx.textAlign = 'right';
+      ctx.fillText('click a transient to assign → ' + armedSlot, cssW - 8, cssH - 6);
     }
   }
 
@@ -1083,9 +1158,25 @@ let isRecording = false;
     return best;
   }
 
+  function hitTestMarker(px) {
+    // Returns the closest marker within MARKER_HIT_SLOP px, or null.
+    let best = null, bestDist = Infinity;
+    for (const m of markerLayout) {
+      const d = Math.abs(px - m.x);
+      if (d <= MARKER_HIT_SLOP && d < bestDist) { bestDist = d; best = m; }
+    }
+    return best;
+  }
+
   function onPointerMove(ev) {
     const p = canvasPointFromEvent(ev);
     if (drag) {
+      // Track whether the pointer has moved enough to count as a real drag (vs a click).
+      if (!drag.moved) {
+        const dx = Math.abs(p.x - drag.pressX);
+        const dy = Math.abs(p.y - drag.pressY);
+        if (dx > CLICK_MOVE_THRESHOLD || dy > CLICK_MOVE_THRESHOLD) drag.moved = true;
+      }
       // Move the band so its left edge follows (cursor.x - grabOffset).
       const cssW = parseFloat(canvas.style.width);
       const newX = Math.max(0, Math.min(cssW - drag.bandW, p.x - drag.grabOffset));
@@ -1093,9 +1184,8 @@ let isRecording = false;
       if (rec && rec.buffer) {
         const totalSec = rec.buffer.length / rec.sampleRate;
         const tStart = (newX / cssW) * totalSec;
-        const hop = (rec.chosenSlots[0] && rec.chosenSlots[0].hop) || 1;
+        const hop = rec.hop || (rec.chosenSlots[0] && rec.chosenSlots[0].hop) || 1;
         const frame = Math.floor((tStart * rec.sampleRate) / hop);
-        // Update the in-memory chosenSlot entry so the redraw shows the new position.
         const entry = rec.chosenSlots.find(c => c.slot === drag.slot);
         if (entry) entry.frame = frame;
         drag.pendingFrame = frame;
@@ -1103,9 +1193,15 @@ let isRecording = false;
       drawWaveform();
       ev.preventDefault();
     } else {
-      // Hover feedback only.
-      const hit = hitTestBand(p.x);
-      canvas.classList.toggle('over-region', !!hit);
+      // Hover feedback: track marker hover for visual highlight; band hover for cursor.
+      const marker = hitTestMarker(p.x);
+      const band = hitTestBand(p.x);
+      const newHover = marker ? marker.idx : -1;
+      if (newHover !== hoveredMarkerIdx) {
+        hoveredMarkerIdx = newHover;
+        drawWaveform();
+      }
+      canvas.classList.toggle('over-region', !!(marker || band));
     }
   }
 
@@ -1113,10 +1209,17 @@ let isRecording = false;
     if (!drag) return;
     const slot = drag.slot;
     const frame = drag.pendingFrame;
+    const movedFar = drag.moved;
     drag = null;
     canvas.classList.remove('dragging');
+    // Click (no significant movement) → arm/disarm this slot for click-to-pick mode.
+    if (!movedFar) {
+      armedSlot = (armedSlot === slot) ? null : slot;
+      drawWaveform();
+      return;
+    }
     drawWaveform();
-    // Commit the new slice into the engine so it actually plays from the new position.
+    // Drag commit: write the new slice into the engine so it actually plays from the new position.
     if (frame != null && window._samplerEngine && typeof window._samplerEngine.replaceSliceForSlot === 'function') {
       try { await window._samplerEngine.replaceSliceForSlot(slot, frame); }
       catch (e) { console.warn('[waveform] replaceSliceForSlot failed:', e); }
@@ -1126,13 +1229,43 @@ let isRecording = false;
   function onPointerDown(ev) {
     if (!rec || !rec.buffer) return;
     const p = canvasPointFromEvent(ev);
+
+    // ── Click-to-pick path: if a slot is armed and the user lands near a transient
+    //    marker, treat as a click-assign — don't start a drag.
+    if (armedSlot) {
+      const m = hitTestMarker(p.x);
+      if (m) {
+        const slot = armedSlot;
+        const frame = m.frame;
+        const entry = rec.chosenSlots.find(c => c.slot === slot);
+        if (entry) entry.frame = frame;
+        armedSlot = null;
+        drawWaveform();
+        if (window._samplerEngine && typeof window._samplerEngine.replaceSliceForSlot === 'function') {
+          window._samplerEngine.replaceSliceForSlot(slot, frame)
+            .catch(e => console.warn('[waveform] replaceSliceForSlot failed:', e));
+        }
+        ev.preventDefault();
+        return;
+      }
+    }
+
     const hit = hitTestBand(p.x);
-    if (!hit) return;
+    if (!hit) {
+      // Clicked empty waveform area: disarm any armed slot.
+      if (armedSlot) { armedSlot = null; drawWaveform(); ev.preventDefault(); }
+      return;
+    }
+    // Potential drag — if pointer doesn't move much, onPointerUp will treat it as a click
+    // and arm/disarm this slot instead of committing a drag.
     drag = {
       slot: hit.slot,
       bandW: hit.w,
-      grabOffset: p.x - hit.x,  // so the band moves under the cursor consistently
-      pendingFrame: null
+      grabOffset: p.x - hit.x,
+      pendingFrame: null,
+      pressX: p.x,
+      pressY: p.y,
+      moved: false
     };
     canvas.classList.add('dragging');
     ev.preventDefault();
