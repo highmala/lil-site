@@ -29,7 +29,7 @@
   },
   "voices": {
     "hit1": {
-      "sample": "pentatonic/samples/hit-1.wav",
+      "sample": "pentatonic/samples/hit-1.mp3",
       "probability": {
         "ld": 0.02,
         "rt": 0.50
