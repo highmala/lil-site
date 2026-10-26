@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>lil.audio</title>
   <script src="https://cdn.jsdelivr.net/npm/tone@15.1.22/build/Tone.min.js"></script>
+  <link rel="stylesheet" href="/play/control-modes.css">
   <style>
     @font-face {
       font-family: 'ComicSans';
@@ -334,6 +335,40 @@
       <div id="start-prompt">tap anywhere</div>
     </div>
 
+    <div id="control-sliders" class="control-panel" hidden aria-label="Two position controls">
+      <div class="control-slider">
+        <label for="control-x">hum <span aria-hidden="true">↔</span> glow</label>
+        <div class="control-range-row">
+          <span aria-hidden="true">hum</span>
+          <input id="control-x" type="range" min="0" max="1000" step="1" value="500">
+          <span aria-hidden="true">glow</span>
+        </div>
+      </div>
+      <div class="control-slider">
+        <label for="control-y">sleep <span aria-hidden="true">↔</span> play</label>
+        <div class="control-range-row">
+          <span aria-hidden="true">sleep</span>
+          <input id="control-y" type="range" min="0" max="1000" step="1" value="500">
+          <span aria-hidden="true">play</span>
+        </div>
+      </div>
+    </div>
+
+    <div id="control-buttons" class="control-panel" hidden aria-label="Four quadrant controls">
+      <button type="button" data-quadrant="TL" aria-keyshortcuts="1" aria-label="Hum and play: choose a new random position">
+        <span>hum + play</span><span class="control-key" aria-hidden="true">1</span>
+      </button>
+      <button type="button" data-quadrant="TR" aria-keyshortcuts="2" aria-label="Glow and play: choose a new random position">
+        <span>glow + play</span><span class="control-key" aria-hidden="true">2</span>
+      </button>
+      <button type="button" data-quadrant="BL" aria-keyshortcuts="3" aria-label="Hum and sleep: choose a new random position">
+        <span>hum + sleep</span><span class="control-key" aria-hidden="true">3</span>
+      </button>
+      <button type="button" data-quadrant="BR" aria-keyshortcuts="4" aria-label="Glow and sleep: choose a new random position">
+        <span>glow + sleep</span><span class="control-key" aria-hidden="true">4</span>
+      </button>
+    </div>
+
     <div id="ball"></div>
     <button id="mute-btn">mute</button>
     <button id="record-btn" title="Tabby — record 15s and assign transients to drum slots" aria-label="Tabby record"></button>
@@ -350,6 +385,11 @@
       <a href="?world=simple2" style="color:inherit; margin:0 5px;">simple2</a>
       <a href="?" style="color:inherit; margin:0 5px;">synth</a>
     </div>
+    <nav id="control-mode-selector" aria-label="Control mode">
+      <a href="?" data-mode="xy">XY</a>
+      <a href="?ui=sliders" data-mode="sliders">sliders</a>
+      <a href="?ui=buttons" data-mode="buttons">buttons</a>
+    </nav>
     <div id="version">lil.audio v0.1</div>
   </div>
 
@@ -359,6 +399,8 @@ const PASS = 'bambient';
 const pwInput = document.getElementById('pw');
 const gate = document.getElementById('gate');
 const appEl = document.getElementById('app');
+const controlMode = new URLSearchParams(window.location.search).get('ui') || 'xy';
+const usesXYControl = controlMode !== 'sliders' && controlMode !== 'buttons';
 
 function tryPassword() {
   if (pwInput.value === PASS) {
@@ -404,6 +446,7 @@ const lblTopEl = document.getElementById('lbl-top');
 const lblBottomEl = document.getElementById('lbl-bottom');
 const lblLeftEl = document.getElementById('lbl-left');
 const lblRightEl = document.getElementById('lbl-right');
+const controlUiEls = Array.from(document.querySelectorAll('.control-panel, #control-mode-selector'));
 
 function updateFieldMetrics() {
   const rect = fieldEl.getBoundingClientRect();
@@ -517,14 +560,63 @@ function updateVisuals(now = performance.now()) {
   lblRightEl.style.opacity = baseLabelOpacity + x * 0.3;
   // Mute button color
   if (muteBtnEl) muteBtnEl.style.color = textColor;
+  controlUiEls.forEach(el => { el.style.color = textColor; });
 }
 
 // ─── INTERACTION ───
+function ensureAudioStarted() {
+  if (audioStarted) return;
+  audioStarted = true; // prevent double-init
+  promptEl.style.display = 'none';
+  muteBtnEl.style.display = 'block';
+
+  // Resume synchronously in the input event for Safari, then use Tone's async start.
+  const ctx = Tone.getContext().rawContext;
+  if (ctx.state === 'suspended') ctx.resume();
+  Tone.start().then(async () => {
+    if (Tone.getContext().rawContext.state === 'suspended') {
+      Tone.getContext().rawContext.resume();
+    }
+    const worldParam = new URLSearchParams(window.location.search).get('world');
+    if (worldParam && window._samplerEngine) {
+      try {
+        const ok = await window._samplerEngine.start();
+        if (ok) {
+          console.log('[lil] sampler engine started for world:', worldParam);
+          if (worldParam === 'simple' || worldParam === 'simple2') {
+            document.body.classList.add('world-simple');
+            if (worldParam === 'simple2') document.body.classList.add('world-simple2');
+            const rb = document.getElementById('record-btn');
+            if (rb) rb.style.display = 'block';
+          }
+          startAudioControlLoop();
+          return;
+        }
+      } catch(err) {
+        console.error('[lil] sampler failed, falling back to synth:', err);
+      }
+    }
+    startAudio();
+    startAudioControlLoop();
+  });
+}
+
+// Shared surface for the alternative physical-control prototypes.
+window.LILControls = {
+  startAudio: ensureAudioStarted,
+  setPosition(x, y) {
+    xTarget = Math.max(0, Math.min(1, x));
+    yTarget = Math.max(0, Math.min(1, y));
+  },
+  getTarget() { return { x: xTarget, y: yTarget }; }
+};
+
 function initApp() {
   appReady = true;
   updateVisuals();
 
   updateFieldMetrics();
+  if (!usesXYControl) return;
 
   function getXY(e) {
     const cx = e.touches ? e.touches[0].clientX : e.clientX;
@@ -537,43 +629,7 @@ function initApp() {
 
   function onStart(e) {
     e.preventDefault();
-    if (!audioStarted) {
-      audioStarted = true; // prevent double-init
-      promptEl.style.display = 'none';
-      muteBtnEl.style.display = 'block';
-
-      // Try sync first (Safari), then async fallback (Chrome)
-      const ctx = Tone.getContext().rawContext;
-      if (ctx.state === 'suspended') ctx.resume();
-      Tone.start().then(async () => {
-        if (Tone.getContext().rawContext.state === 'suspended') {
-          Tone.getContext().rawContext.resume();
-        }
-        const worldParam = new URLSearchParams(window.location.search).get('world');
-        if (worldParam && window._samplerEngine) {
-          try {
-            const ok = await window._samplerEngine.start();
-            if (ok) {
-              console.log('[lil] sampler engine started for world:', worldParam);
-              if (worldParam === 'simple' || worldParam === 'simple2') {
-                document.body.classList.add('world-simple');
-                if (worldParam === 'simple2') document.body.classList.add('world-simple2');
-                const rb = document.getElementById('record-btn');
-                if (rb) rb.style.display = 'block';
-              }
-              // Drive sampler update() each tick (gain/filter modulation needs this)
-              startAudioControlLoop();
-              return;
-            }
-          } catch(err) {
-            console.error('[lil] sampler failed, falling back to synth:', err);
-          }
-        }
-        // Default: synth engine
-        startAudio();
-        startAudioControlLoop();
-      });
-    }
+    ensureAudioStarted();
     isDragging = true;
     onMove(e);
   }
@@ -1398,5 +1454,6 @@ window.addEventListener('pagehide', stopAudioControlLoop);
 
 </script>
 <script src="/play/sampler-engine.js"></script>
+<script src="/play/control-modes.js"></script>
 </body>
 </html>
