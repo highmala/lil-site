@@ -261,7 +261,10 @@ const drumHit=(v,sec=0)=>v>effParty(sec)*.8+.06;
 let vfx=null,vsp=null,leadSend=null,ac=null,revG,hallG,dly,delayWet,leadTone,beatTone,master,rev,hall,leadBus,leadOut,leadCh,beatBus,drumBus,compBus,duck,padBus,voiceIn,voiceBus,NOISE,lead,HANN;
 const SHAPERS={};
 function shaper(d){const k=d.toFixed(2);if(!SHAPERS[k]){const n=2048,c=new Float32Array(n),nm=Math.tanh(d);for(let i=0;i<n;i++){const x=i/(n-1)*2-1;c[i]=Math.tanh(x*d)/nm}SHAPERS[k]=c}const w=ac.createWaveShaper();w.curve=SHAPERS[k];w.oversample='2x';return w}
-function makeIR(sec,pre,damp){const sr=ac.sampleRate,len=Math.floor(sr*sec),ir=ac.createBuffer(2,len,sr),p=Math.floor(sr*pre);
+// phones: bigger audio buffers, longer scheduling lookahead, shorter reverb tails and a lighter canvas, so the sound doesn't break up
+const MOBILE=(()=>{try{return matchMedia('(pointer:coarse)').matches||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)}catch(e){return false}})();
+let _ink='',_inkT=0;function inkC(){const n=performance.now();if(!_ink||n-_inkT>300){_ink=getComputedStyle(document.body).color;_inkT=n}return _ink}
+function makeIR(sec,pre,damp){const sr=ac.sampleRate,len=Math.floor(sr*sec*(MOBILE?.6:1)),ir=ac.createBuffer(2,len,sr),p=Math.floor(sr*pre);
   for(let c=0;c<2;c++){const d=ir.getChannelData(c);
     for(let k=0;k<16;k++){const i=p+Math.floor(Math.random()*sr*.075);if(i<len)d[i]+=(Math.random()*2-1)*.5*(1-k/16)}
     let lp=0;for(let i=p;i<len;i++){const tt=(i-p)/(len-p),a=Math.min(.96,.15+damp*tt);lp=lp*a+(Math.random()*2-1)*(1-a);d[i]+=lp*Math.sqrt((1+a)/(1-a))*Math.exp(-tt*6.5)}
@@ -271,7 +274,7 @@ function makeChorus(depth=.0025){const inp=ac.createGain(),out=ac.createGain(),w
   [[.011,.31,-1],[.017,.43,1]].forEach(([dt,r,p])=>{const d=ac.createDelay(.05);d.delayTime.value=dt;const l=ac.createOscillator();l.frequency.value=r;const lg=ac.createGain();lg.gain.value=depth;l.connect(lg);lg.connect(d.delayTime);l.start();
     const pn=ac.createStereoPanner();pn.pan.value=p;inp.connect(d);d.connect(pn);pn.connect(wet)});wet.connect(out);return{inp,out,wet}}
 function initAudio(){
-  ac=new (window.AudioContext||window.webkitAudioContext)();
+  ac=new (window.AudioContext||window.webkitAudioContext)({latencyHint:(MOBILE?'balanced':'interactive')});
   // master chain: glue comp -> soft saturation -> tone shaping -> limiter
   master=ac.createGain();master.gain.value=.5;
   const glue=ac.createDynamicsCompressor();glue.threshold.value=-18;glue.knee.value=10;glue.ratio.value=2.5;glue.attack.value=.02;glue.release.value=.25;
@@ -1067,7 +1070,7 @@ async function startSing(){
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
   catch(e){micBusy=false;setSession('playback');setHint(e&&e.name==='NotAllowedError'?"The microphone is blocked. Allow the microphone for this site in your browser settings, then try again.":"The microphone isn't reachable on this page.");return}
   micBusy=false;if(ac.state!=='running')ac.resume().catch(()=>{});
-  const src=ac.createMediaStreamSource(stream),proc=ac.createScriptProcessor(2048,1,1),sink=ac.createGain();sink.gain.value=0;src.connect(proc);proc.connect(sink);sink.connect(ac.destination);
+  const src=ac.createMediaStreamSource(stream),proc=ac.createScriptProcessor(4096,1,1),sink=ac.createGain();sink.gain.value=0;src.connect(proc);proc.connect(sink);sink.connect(ac.destination);
   rec={stream,src,proc,sink,chunks:[],t0:ac.currentTime,started:false,floor:0,peak:0,quiet:0,hist:[]};
   proc.onaudioprocess=e=>{const R=rec;if(!R||R.proc!==proc)return;const d=e.inputBuffer.getChannelData(0);R.chunks.push(new Float32Array(d));
     let s=0;for(let i=0;i<d.length;i++)s+=d[i]*d[i];const lv=Math.sqrt(s/d.length),bt=d.length/ac.sampleRate,el=ac.currentTime-R.t0;R.hist.push(lv);if(R.hist.length>160)R.hist.shift();
@@ -1131,7 +1134,7 @@ function scheduleStep(gs,t){
 }
 // one failing step must never stall the transport
 let stepErr=0;
-function tick(){while(nextT<ac.currentTime+.12){try{scheduleStep(step,nextT)}catch(e){if(stepErr++<3)console.error(e)}{const d=stepDurAt(step);nextT+=isFinite(d)&&d>0?d:stepDur()}step=(step+1)%SONG_STEPS}}
+function tick(){while(nextT<ac.currentTime+(MOBILE?.35:.12)){try{scheduleStep(step,nextT)}catch(e){if(stepErr++<3)console.error(e)}{const d=stepDurAt(step);nextT+=isFinite(d)&&d>0?d:stepDur()}step=(step+1)%SONG_STEPS}}
 // audio starts on the first touch anywhere, inside that gesture, so later async paths (a chosen file, a demo, a
 // finished recording) never wait on a context the browser refuses to start
 function setSession(t){try{if(navigator.audioSession&&navigator.audioSession.type!==t)navigator.audioSession.type=t}catch(e){}}
@@ -1256,19 +1259,19 @@ async function initStore(){
 
 /* ---------- display ---------- */
 const cv=$('#viz'),cx=cv.getContext('2d');
-function sizeCanvas(){const r=cv.getBoundingClientRect(),dpr=window.devicePixelRatio||1;cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);cx.setTransform(dpr,0,0,dpr,0,0)}
+function sizeCanvas(){const r=cv.getBoundingClientRect(),dpr=Math.min(MOBILE?1.5:2,window.devicePixelRatio||1);cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr);cx.setTransform(dpr,0,0,dpr,0,0)}
 window.addEventListener('resize',sizeCanvas);
 const COL={lead:'#FF6B6B',beat:'#4ECDC4',song:'#FFD60A',voice:'#A9A7FF',grid:'rgba(255,255,255,.08)',grid2:'rgba(255,255,255,.2)'};
 let lastPart='';
 function drawRec(W,H){const R=rec,n=R.hist.length,bw=W/160;cx.fillStyle=COL.voice;
   for(let i=0;i<n;i++){const h=Math.min(H-40,Math.sqrt(R.hist[i])*H*1.6);cx.globalAlpha=.35+.65*(i/n);cx.beginPath();cx.roundRect(W-(n-i)*bw,(H+14-h)/2,Math.max(1,bw-1),Math.max(2,h),1);cx.fill()}
-  cx.globalAlpha=1;cx.font='bold 15px "Comic Sans MS","Comic Neue",cursive';cx.textBaseline='top';cx.fillStyle=getComputedStyle(document.body).color;
+  cx.globalAlpha=1;cx.font='bold 15px "Comic Sans MS","Comic Neue",cursive';cx.textBaseline='top';cx.fillStyle=inkC();
   cx.fillText(R.started?'Drumming… let go when you are done':'Listening… drum your rhythm',4,2)}
 function draw(){
   if(ac&&playing){while(vq.length&&vq[0].t<=ac.currentTime){const q=vq.shift();curStep=q.st;curT=q.t}}
   mainUI();
   const W=cv.clientWidth,H=cv.clientHeight,C=W/2,R=Math.min(W,H)/2-4,TAU=Math.PI*2;cx.clearRect(0,0,W,H);
-  const ink=getComputedStyle(document.body).color,inkA=a=>ink.replace('rgb(','rgba(').replace(')',','+a+')');
+  const ink=inkC(),inkA=a=>ink.replace('rgb(','rgba(').replace(')',','+a+')');
   const ring=(r,a,w)=>{cx.strokeStyle=inkA(a);cx.lineWidth=w||1;cx.beginPath();cx.arc(C,C,r,0,TAU);cx.stroke()};
   const rIn=R*.36,rP0=R*.46,rP1=R*.94;
   if(rec){ // recording: the level goes round the dot like a clock
@@ -1307,12 +1310,12 @@ function songPos(){return curStep+(ac?clamp((ac.currentTime-curT)/stepDur(),0,1)
 const wrapS=p=>((p%SONG_STEPS)+SONG_STEPS)%SONG_STEPS;
 function vinylInit(lim){
   vDuck=ac.createGain();lim.disconnect();lim.connect(vDuck);vDuck.connect(ac.destination);
-  const cap=ac.createScriptProcessor(1024,2,2),z=ac.createGain();z.gain.value=0;lim.connect(cap);cap.connect(z);z.connect(ac.destination);
+  const cap=ac.createScriptProcessor(MOBILE?4096:1024,2,2),z=ac.createGain();z.gain.value=0;lim.connect(cap);cap.connect(z);z.connect(ac.destination);
   cap.onaudioprocess=e=>{if(!playing||grab||curStep<0)return;const L=Math.round(SONG_STEPS*stepDur()*ac.sampleRate);
     if(!VB||VL!==L){VB=[new Float32Array(L),new Float32Array(L)];VL=L}
     const a=e.inputBuffer.getChannelData(0),b=e.inputBuffer.numberOfChannels>1?e.inputBuffer.getChannelData(1):a;
     let j=Math.floor(wrapS(songPos())/SONG_STEPS*L)%L;for(let i=0;i<a.length;i++){VB[0][j]=a[i];VB[1][j]=b[i];if(++j>=L)j=0}};
-  const sp=ac.createScriptProcessor(1024,0,2);scratchG=ac.createGain();scratchG.gain.value=0;sp.connect(scratchG);scratchG.connect(ac.destination);
+  const sp=ac.createScriptProcessor(MOBILE?2048:1024,0,2);scratchG=ac.createGain();scratchG.gain.value=0;sp.connect(scratchG);scratchG.connect(ac.destination);
   let rp=0,rate=0,brake=false;const dec=1/(.42*ac.sampleRate); // vinyl stop: full speed to still in about 0.4 s
   sp.onaudioprocess=e=>{const o0=e.outputBuffer.getChannelData(0),o1=e.outputBuffer.getChannelData(1),n=o0.length;
     if((!grab&&!brake)||!VB){o0.fill(0);o1.fill(0);rate=0;return}
