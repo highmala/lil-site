@@ -3,12 +3,12 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>drift loops · lil.audio</title>
+<title>sonne · lil.audio</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&display=swap">
 <style>
-/* Drift Loops: sing a loop, it repeats in four stereo copies of slightly different lengths that slowly drift apart.
+/* Sonne (the drifting looper): sing a loop, it repeats in four stereo copies of slightly different lengths that slowly drift apart.
    The box only adds a soft harmony layer underneath and tunes and colours the voice. lil.audio look. */
 :root{--bg:hsl(250,40%,22%);--ink:255 255 255;--rec:#ff2d2d;
   --f:"Comic Sans MS","ComicSans","Comic Neue",cursive;color-scheme:dark}
@@ -69,7 +69,7 @@ html.lil-ok #lilgate{display:none}
 
 </head>
 <body>
-<div id="lilgate"><div class="logo">lil</div><input id="lilpw" type="password" placeholder="•••••••" autocomplete="current-password" autofocus><div class="hint">drift loops</div></div>
+<div id="lilgate"><div class="logo">lil</div><input id="lilpw" type="password" placeholder="•••••••" autocomplete="current-password" autofocus><div class="hint">sonne</div></div>
 <script>(function(){var PASS='bambient',g=document.getElementById('lilgate'),i=document.getElementById('lilpw');
 function tryPw(){if(i.value===PASS){document.documentElement.classList.add('lil-ok');try{sessionStorage.setItem('lil-ok','1')}catch(e){}i.blur()}
 else if(i.value){g.classList.add('wrong');i.value='';setTimeout(function(){g.classList.remove('wrong')},400)}}
@@ -77,7 +77,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
 
 
 <div class="stage blank">
-  <h1 class="logo">drift loops</h1>
+  <h1 class="logo">sonne</h1>
   <div class="deck">
     <div class="side">
       <div class="v"><span class="lbl">drift</span><span class="e">apart</span><input type="range" id="drift" min="0" max="1" step="0.001" value="0.45" aria-label="Drift: together (bottom) to drifting apart (top)"><span class="e">together</span></div>
