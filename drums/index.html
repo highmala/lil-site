@@ -96,7 +96,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
 <div class="stage blank">
   <h1 class="logo">song box drums</h1>
   <div class="deck">
-    <div class="side"><div class="v"><span class="lbl">voice</span><span class="e">human</span><input type="range" id="robot" min="0" max="1" step="0.001" aria-label="Voice: robot (bottom) to human (top)"><span class="e">robot</span></div><div class="v"><span class="lbl">animal</span><span class="e">chipmunk</span><input type="range" id="critter" min="0" max="1" step="0.001" aria-label="Voice changer: bear (bottom), human (middle), chipmunk (top)"><span class="e">bear</span></div></div>
+    <div class="side"><div class="v"><span class="lbl">voice</span><span class="e">human</span><input type="range" id="robot" min="0" max="1" step="0.001" aria-label="Voice: robot (bottom) to human (top)"><span class="e">robot</span></div></div>
     <div class="ring">
       <canvas id="viz" aria-label="Circular drum roll: your rhythm, the drum answer and the groove go round as the jam plays"></canvas>
       <button id="main" aria-label="Hold to drum"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="mainIcon" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z" fill="currentColor"/></svg></button>
@@ -117,7 +117,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
     <b id="rHeard"></b><b id="rPart"></b><b id="rBpm"></b><b id="rScale"></b><b id="rLead"></b><b id="rBeat"></b><b id="rVoice"></b><span id="beatName"></span>
     <button id="loadVoice"></button><input type="file" id="voiceFile" accept="audio/*">
     <button id="demoSunny"></button><button id="demoSleepy"></button><button id="voiceMute"></button>
-    <input type="range" id="vEcho" min="0" max="1" step="0.001"><input type="range" id="mix" min="0" max="1" step="0.001">
+    <input type="range" id="critter" min="0" max="1" step="0.001" aria-label="Voice changer: bear (bottom), human (middle), chipmunk (top)"><input type="range" id="vEcho" min="0" max="1" step="0.001"><input type="range" id="mix" min="0" max="1" step="0.001">
     <div class="pbtns"><button class="pbtn" data-slot="0"></button><button class="pbtn" data-slot="1"></button><button class="pbtn" data-slot="2"></button><button class="pbtn" data-slot="3"></button></div>
     <div id="pStatus"></div><button id="newMelody"></button><button id="newBeat"></button>
   </div>
