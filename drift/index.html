@@ -49,10 +49,20 @@ input[type=range]::-moz-range-thumb{width:32px;height:32px;border-radius:50%;bac
 button:focus-visible,input:focus-visible{outline:2px solid currentColor;outline-offset:4px}
 [hidden]{display:none!important}
 .blank .small{visibility:hidden}
-@media (max-width:640px){.stage{gap:10px}.v{width:26px}.v .lbl{font-size:.52rem;letter-spacing:.06em}.v .e{font-size:.56rem}.v input{height:clamp(150px,30vh,240px)}.deck{gap:4px}.side{gap:6px}.v .lbl,.v .e{overflow:visible;width:26px;text-align:center;display:flex;justify-content:center}}
+/* phones (Ville, 5 Nov 2026): every slider lies flat at full width, stacked, voice pair above the ring and style pair below */
+@media (max-width:640px){.stage{gap:8px;padding-top:10px;padding-bottom:14px}
+  .deck{grid-template-columns:1fr;gap:8px;align-content:center}
+  .side{display:grid;grid-template-columns:1fr;gap:6px;width:100%}
+  .v{width:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:0 10px}
+  .v .lbl{grid-column:2;grid-row:1;text-align:center;font-size:.6rem;letter-spacing:.12em}
+  .v .e{font-size:.62rem;grid-row:1;width:auto;display:block}
+  .v .lbl+.e{grid-column:3;text-align:right}.v .e:last-child{grid-column:1;text-align:left}
+  .v input{grid-column:1/-1;grid-row:2;writing-mode:horizontal-tb;direction:ltr;width:100%;height:32px;min-width:0}
+  .v input::-webkit-slider-runnable-track{width:auto;height:12px}.v input::-webkit-slider-thumb{margin-left:0;margin-top:-10px}
+  .ring{max-width:none;width:min(100%,60dvh);width:min(100%,60vh)}
+  @supports (height:1dvh){.ring{width:min(100%,60dvh)}}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
-
 <!-- lil.audio password gate (same password and look as lil.audio/play) -->
 <style>
 @font-face{font-family:ComicSans;src:url("/fonts/comic-sans-bold.woff2") format("woff2");font-weight:bold;font-display:swap}
@@ -519,8 +529,8 @@ function draw(){requestAnimationFrame(draw);const W=cv.width,H=cv.height;if(!W)r
   // harmony: chord segments as a faint inner band turning with the loop
   if(CHORDS&&layers.length){const r=inner*1.55,ph=playing?((now-T0)%LOOP.L+LOOP.L)%LOOP.L:0;
     CHORDS.list.forEach((ch,i)=>{const a0=-Math.PI/2-2*Math.PI*(ch.t-ph)/LOOP.L,a1=a0-2*Math.PI*ch.len/LOOP.L;cx.strokeStyle=`rgb(${ink} / ${.1+.12*(i%2)})`;cx.lineWidth=band*.35;cx.beginPath();cx.arc(c,cy,r,a1+.03,a0-.03);cx.stroke()})}
-  // playhead
-  cx.strokeStyle=`rgb(${ink} / .55)`;cx.lineWidth=Math.max(1.5,R0*.008);cx.beginPath();cx.moveTo(c,cy-R0*.99);cx.lineTo(c,cy-R0*.93+3*band*1.08+band*.95);cx.stroke()}
+  // no playhead line (Ville, 5 Nov 2026: remove the vertical stripe)
+}
 size();requestAnimationFrame(draw);
 })();
 </script>
