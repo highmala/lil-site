@@ -55,10 +55,20 @@ input[type=range]::-moz-range-thumb{width:32px;height:32px;border-radius:50%;bac
 button:focus-visible,input:focus-visible{outline:2px solid currentColor;outline-offset:4px}
 [hidden]{display:none!important}
 .blank #beatBtn{visibility:hidden}
-@media (max-width:640px){.stage{gap:10px}.v{width:26px}.v .lbl{font-size:.52rem;letter-spacing:.06em}.v .e{font-size:.56rem}.v input{height:clamp(150px,30vh,240px)}.deck{gap:4px}.side{gap:6px}.v .lbl,.v .e{overflow:visible;width:26px;text-align:center;display:flex;justify-content:center}}
+/* phones (Ville, 5 Nov 2026): every slider lies flat, voice pair above the ring and style pair below, so the ring gets the full width */
+@media (max-width:640px){.stage{gap:8px;padding-top:10px;padding-bottom:14px}
+  .deck{grid-template-columns:1fr;gap:8px;align-content:center}
+  .side{display:grid;grid-template-columns:1fr 1fr;gap:4px 22px;width:100%}
+  .v{width:auto;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:2px 8px}
+  .v .lbl{grid-column:1/-1;grid-row:1;text-align:center;font-size:.6rem;letter-spacing:.12em}
+  .v .e{font-size:.62rem;grid-row:2}
+  .v .lbl+.e{grid-column:3}.v .e:last-child{grid-column:1}
+  .v input{grid-column:2;grid-row:2;writing-mode:horizontal-tb;direction:ltr;width:100%;height:32px;min-width:0}
+  .v input::-webkit-slider-runnable-track{width:auto;height:12px}.v input::-webkit-slider-thumb{margin-left:0;margin-top:-10px}
+  .ring{max-width:none;width:min(100%,60dvh);width:min(100%,60vh)}
+  @supports (height:1dvh){.ring{width:min(100%,60dvh)}}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
-
 <!-- lil.audio password gate (same password and look as lil.audio/play) -->
 <style>
 @font-face{font-family:ComicSans;src:url("/fonts/comic-sans-bold.woff2") format("woff2");font-weight:bold;font-display:swap}
@@ -373,7 +383,7 @@ function lw(x){return{fl:L4([1,0,0,0],x),gt:L4([0,1,0,0],x),pn:L4([0,0,1,0],x),s
 function updateLead(){
   if(!ac)return;const x=S.leadTex,now=ac.currentTime,tc=.035,{fl,gt,pn,sy}=lw(x);
   const lv=LV(),HT=lv.map((o,i)=>o.h||LH[i]);const hs=[0,1,2,3,4,5,6,7].map(k=>L4(HT.map(a=>a[k]),x));const norm=1/Math.sqrt(hs.reduce((a,b)=>a+b*b,0));
-  hs.forEach((h,k)=>{const g=h*norm*.3*(1-sy*.88);lead.hg[k].gain.setTargetAtTime(g,now,tc);if(k<4)lead.ug[k].gain.setTargetAtTime(g*pn*.85*L4(LA('uni'),x),now,tc)});
+  hs.forEach((h,k)=>{const g=h*norm*.3*(1-sy*.88)*(1-gt*.72);lead.hg[k].gain.setTargetAtTime(g,now,tc);if(k<4)lead.ug[k].gain.setTargetAtTime(g*pn*.85*L4(LA('uni'),x),now,tc)});
   const wv=lv[3].wave||'sawtooth';if(wv!==sawWave){sawWave=wv;lead.saws.forEach(o=>o.type=wv)}const sd=L4(LA('sDet'),x);lead.saws.forEach((o,i)=>o.detune.value=lead.sawDt[i]*sd);
   lead.sawG.gain.setTargetAtTime(sy*.62,now,tc);
   lead.breathG.gain.setTargetAtTime(L4(LA('br'),x),now,tc);
@@ -393,6 +403,27 @@ function P(p,dest){const s=ac.createStereoPanner();s.pan.value=clamp(p,-1,1);s.c
 
 function setPitch(time,f,tc,B){lead.oscs.forEach((o,k)=>{const n=k+1;o.frequency.setTargetAtTime(f*n*Math.sqrt(1+B*n*n),time,tc)});
   lead.uni.forEach((o,k)=>{const n=k+1;o.frequency.setTargetAtTime(f*n*Math.sqrt(1+B*n*n),time,tc)});lead.saws.forEach(o=>o.frequency.setTargetAtTime(f,time,tc));lead.sub.frequency.setTargetAtTime(f/2,time,tc)}
+
+// plucked guitar string (Karplus-Strong, with an allpass for exact tuning and a pluck-position comb), rendered once per
+// note and variant and cached; it carries the guitar zone of the style slider (Ville, 5 Nov 2026: more guitar-like)
+const KSC={};
+function ksBuf(m,vr){const mi=Math.round(m),key=mi+'_'+vr;if(KSC[key])return KSC[key];
+  const sr=ac.sampleRate,f=mtof(mi),P=sr/f,br=[.62,.9,.75][vr],sus=[.9965,.9985,.9978][vr],pp=[.18,.12,.22][vr],wa=.5+.3*br;
+  // loop period = L - (1-wa) (two-tap lowpass) + allpass delay ad, solved so the string sits exactly on the note
+  const L=Math.floor(P+(1-wa)-.1),ad=P+(1-wa)-L,c=(1-ad)/(1+ad),len=Math.floor(sr*Math.min(3.2,1.2+300/f)),out=new Float32Array(len);
+  const buf=new Float32Array(L);let lp=0;for(let i=0;i<L;i++){const n=Math.random()*2-1;lp+=br*(n-lp);buf[i]=lp}
+  const pd=Math.max(1,Math.round(L*pp)),ex=buf.slice();for(let i=0;i<L;i++)buf[i]=ex[i]-.8*ex[(i-pd+L)%L];
+  let idx=0,apx=0,apy=0,dc=0,dcy=0;
+  for(let i=0;i<len;i++){const x=buf[idx],nx=buf[(idx+1)%L],avg=sus*(wa*x+(1-wa)*nx),y=c*avg+apx-c*apy;apx=avg;apy=y;buf[idx]=y;idx=(idx+1)%L;
+    dcy=x-dc+.995*dcy;dc=x;out[i]=dcy}
+  let pk=0;for(let i=0;i<len;i++)pk=Math.max(pk,Math.abs(out[i]));const g=pk?.9/pk:1;const fo=Math.floor(sr*.3);for(let i=0;i<len;i++)out[i]*=g*(i<16?i/16:1)*Math.min(1,(len-i)/fo);
+  const b=ac.createBuffer(1,len,sr);b.copyToChannel(out,0);return KSC[key]=b}
+const gVar=()=>MOODV.lead[band()][1];
+function pluck(t,m,v,off,rel,dest,from,fromDur){const s=ac.createBufferSource(),mi=Math.round(m);s.buffer=ksBuf(mi,gVar());s.playbackRate.value=Math.pow(2,(m-mi)/12);
+  if(from!=null){s.playbackRate.setValueAtTime(Math.pow(2,(from-mi)/12),t);s.playbackRate.setTargetAtTime(Math.pow(2,(m-mi)/12),t+fromDur,.012)}
+  const g=ac.createGain();g.gain.value=v;s.connect(g);g.connect(dest);s.start(t);const end=t+s.buffer.duration;
+  if(off!=null&&off<end){g.gain.setValueAtTime(v,off);g.gain.setTargetAtTime(0,off,rel/3);s.stop(Math.min(end,off+rel*2+.05))}
+  return{s,g}}
 function leadNote(t,m,v,off,o={}){
   t=hj(t);v=hv(v);
   const c=cm(),a=amb(),x=S.leadTex,f=mtof(m),{fl,gt,pn,sy}=lw(x);
@@ -408,6 +439,7 @@ function leadNote(t,m,v,off,o={}){
   e2.cancelScheduledValues(t);e2.setTargetAtTime(v,t,att/3);
   if(off!=null){e1.setTargetAtTime(0,off,rel/3);e2.setTargetAtTime(0,off,rel/3)}
   if(fl*tr>.03){noise(t,t+.2).connect(filt('bandpass',f*3,3)).connect(envG(t,.012,v*fl*tr*ch*.06,.06,leadOut));noise(t,t+.2).connect(filt('bandpass',f,4)).connect(envG(t,.02,v*fl*tr*ch*.05,.09,leadOut))}
+  if(gt>.03){if(lead.ks){const pg=lead.ks.g.gain;pg.cancelScheduledValues(t);pg.setTargetAtTime(0,t,.012)}lead.ks=pluck(t,m,v*gt*.3,off,rel,leadOut,o.from,o.fromDur)}
   if(gt*tr>.03){noise(t,t+.1).connect(filt('bandpass',Math.min(f*6,9000),1)).connect(envG(t,.0006,v*gt*tr*.2,.03,leadOut));osc('triangle',f*8,t,t+.05).connect(envG(t,.0005,v*gt*tr*.03,.012,leadOut))}
   if(pn*tr>.03){noise(t,t+.1).connect(filt('lowpass',2600)).connect(envG(t,.0008,v*pn*tr*.13,.02,leadOut));noise(t,t+.2).connect(filt('bandpass',90,3)).connect(envG(t,.002,v*pn*tr*.25,.06,leadOut))}
 }
@@ -419,11 +451,11 @@ function polyNote(t,m,v,dur,pan=0){
   const x=S.leadTex,{gt,pn,sy}=lw(x),f=mtof(m),key=Math.round(x*20)+'_'+band();
   let pw=PWC[key];if(!pw){const lv=LV(),HT=lv.map((o,i)=>o.h||LH[i]),re=new Float32Array(9),im=new Float32Array(9);for(let k=0;k<8;k++)im[k+1]=L4(HT.map(a=>a[k]),x);pw=PWC[key]=ac.createPeriodicWave(re,im)}
   const att=L4([.05,.002,.002,.005],x),dec=L4(LA('dec'),x),sus=L4([.6,.1,.14,.55],x),rel=L4([.1,.25,.35,.15],x),stop=t+dur+rel*3+.2,d=P(pan,leadOut);
-  const lp=filt('lowpass',L4(LA('cut'),x)*1.3,.7);lp.connect(adsr(t,att,v*.13*(1-sy*.7),sus,dec/3,t+dur,rel,d));
+  const lp=filt('lowpass',L4(LA('cut'),x)*1.3,.7);lp.connect(adsr(t,att,v*.13*(1-sy*.7)*(1-gt*.7),sus,dec/3,t+dur,rel,d));
   const o=ac.createOscillator();o.setPeriodicWave(pw);o.frequency.value=f;o.connect(lp);o.start(t);o.stop(stop);
   if(sy>.05){const l2=filt('lowpass',f*3,2);l2.frequency.setValueAtTime(Math.min(14000,f*14),t);l2.frequency.setTargetAtTime(f*2.5+300,t+.005,.12);
     for(const dt of[-8,8]){const s2=osc('sawtooth',f,t,stop);s2.detune.value=dt;s2.connect(l2)}l2.connect(adsr(t,.004,v*.05*sy,.35,.15,t+dur,.08,d))}
-  if(gt>.05)noise(t,t+.05).connect(filt('bandpass',Math.min(f*6,9000),1)).connect(envG(t,.0006,v*gt*.08,.02,d));
+  if(gt>.05){pluck(t,m,v*gt*.16,t+dur,rel,d);if(gt>.05)noise(t,t+.05).connect(filt('bandpass',Math.min(f*6,9000),1)).connect(envG(t,.0006,v*gt*.08,.02,d));}
   if(pn>.05)noise(t,t+.05).connect(filt('lowpass',2600)).connect(envG(t,.0008,v*pn*.05,.015,d));
 }
 function strum(t,tri,v,down,dur){const c=tri[0],ns=[c,c+2,c+4,c+7,c+9].map(d=>d2m(PAD_BASE+5,d)).sort((a,b)=>a-b);if(!down)ns.reverse();
@@ -601,9 +633,10 @@ function updateVoiceFx(c){const x=S.beatTex,n=ac.currentTime,e=S.energy,sy=S.sty
   vfx.crush.gain.setTargetAtTime(cr,n,.05);vfx.clean.gain.setTargetAtTime(1-cr,n,.05);vfx.sat.gain.setTargetAtTime(sa*.6,n,.05);vfx.dry.gain.setTargetAtTime(1-sa*.4,n,.05)}
 // the voice's space follows the mood: calm is a soft, washed-out hall; party is tight, snappy tempo delays
 // (8ths bouncing left and right, short tail); the synthetic end pushes the delay and doubling a bit further
+const VWET=.5; // voice reverb, hall and delay sends at half their old level (Ville, 5 Nov 2026: less wet)
 function updateVoiceSpace(){if(!ac)return;const e=S.energy,sy=S.style,n=ac.currentTime,calm=Math.pow(clamp(1-e/.6),1.2),party=clamp((e-.35)/.55),sd=stepDur(),steps=e>.7?2:3;
   vsp.dl.delayTime.setTargetAtTime(steps*sd,n,.05);vsp.dr.delayTime.setTargetAtTime(steps*sd,n,.05);vsp.fb.gain.setTargetAtTime(.46-.22*party,n,.08);
-  vsp.rev.gain.setTargetAtTime(.06+.12*(1-calm)*(1-party),n,.08);vsp.dly.gain.setTargetAtTime(.62*party*(.8+.4*sy),n,.08);vsp.hall.gain.setTargetAtTime(1.05*calm,n,.15);
+  vsp.rev.gain.setTargetAtTime(VWET*(.06+.12*(1-calm)*(1-party)),n,.08);vsp.dly.gain.setTargetAtTime(VWET*.62*party*(.8+.4*sy),n,.08);vsp.hall.gain.setTargetAtTime(VWET*1.05*calm,n,.15);
   vsp.dbl.gain.setTargetAtTime(.08+.22*party+.15*sy,n,.08);if(vfx)updateVoiceFx(typeof lastC==='number'?lastC:0)}
 // rough timing quantize: grid time u -> clip time, with each sung onset pulled toward its grid slot by qa (0..1)
 function warp(u,qa){const A=voice.anchors;if(!A||!A.length||qa<=0)return u;let x0=0,y0=0;
@@ -1171,7 +1204,9 @@ function markVoiceChips(){$('#demoSunny').setAttribute('aria-pressed',!!voice&&v
 const SLIDERS=['robot','critter','vEcho','style','energy','mix'],SAVED=SLIDERS.concat(['beatTex','tempo','party','mood','leadTex','leadVol','beatVol','voiceVol']);
 // style, organic to synthetic: one slider picks the beat, the lead instrument (bongos-flute, band-guitar, machine-keys, reggaeton-synth) and the
 // lead's effects: airy hall for the flute, room for the guitar, plate and chorus for the keys, dotted-8th ping-pong for the synth
-function applyStyle(){S.beatTex=1-S.style;S.leadTex=L4([1,.67,.33,0],S.beatTex);updateLead();styleFx();updateVoiceSpace()}
+// style -> lead: flute at the organic end, a wide guitar zone through the middle, then piano, synth at the far end
+const leadTexFor=st=>{const X=[0,.1,.3,.64,.8,1],Y=[0,0,1/3,1/3,2/3,1];let i=0;while(i<4&&st>X[i+1])i++;return Y[i]+(Y[i+1]-Y[i])*clamp((st-X[i])/(X[i+1]-X[i]))};
+function applyStyle(){S.beatTex=1-S.style;S.leadTex=leadTexFor(S.style);updateLead();styleFx();updateVoiceSpace()}
 function styleFx(){if(!ac||!leadSend)return;const x=S.beatTex,n=ac.currentTime;
   leadSend.rev.gain.setTargetAtTime(L4([.16,.42,.34,.26],x),n,.1);leadSend.hall.gain.setTargetAtTime(L4([.12,.18,.22,.6],x),n,.1);leadSend.dly.gain.setTargetAtTime(L4([.75,.28,.16,.3],x),n,.1)}
 // energy: calm is sparser, softer and up to ~45% slower than the take; party is busier, brighter and up to ~35% faster
@@ -1180,7 +1215,7 @@ function applyEnergy(){const e=S.energy,e0=voice&&voice.e0!=null?voice.e0:.5,b0=
 // mix: one balance between the voice and the band
 function applyMix(){const v=+$('#vVol').value,m=+$('#mVol').value;S.voiceVol=clamp(v);S.leadVol=clamp(m);S.beatVol=clamp(m*.9);applyVolumes()}
 $('#vVol').addEventListener('input',applyMix);$('#mVol').addEventListener('input',applyMix);
-S.beatTex=1-S.style;S.leadTex=L4([1,.67,.33,0],S.beatTex);
+S.beatTex=1-S.style;S.leadTex=leadTexFor(S.style);
 function syncInputs(){for(const k of SLIDERS)$('#'+k).value=S[k]}
 for(const k of SLIDERS)$('#'+k).addEventListener('input',e=>{S[k]=+e.target.value;if(k==='style')applyStyle();if(k==='energy')applyEnergy();if(k==='mix')applyMix();if(k==='vEcho')updateVoiceSpace();readouts()});
 $('#sing').addEventListener('click',startSing);
