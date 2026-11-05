@@ -96,7 +96,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
 <div class="stage blank">
   <h1 class="logo">song box drums</h1>
   <div class="deck">
-    <div class="side"><div class="v"><span class="lbl">voice</span><span class="e">human</span><input type="range" id="robot" min="0" max="1" step="0.001" aria-label="Voice: robot (bottom) to human (top)"><span class="e">robot</span></div></div>
+    <div class="side"><div class="v"><span class="lbl">rhythm</span><span class="e">human</span><input type="range" id="robot" min="0" max="1" step="0.001" aria-label="Rhythm: robot (bottom) to human (top)"><span class="e">robot</span></div></div>
     <div class="ring">
       <canvas id="viz" aria-label="Circular drum roll: your rhythm, the drum answer and the groove go round as the jam plays"></canvas>
       <button id="main" aria-label="Hold to drum"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="mainIcon" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z" fill="currentColor"/></svg></button>
@@ -108,7 +108,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
     <p class="hint" id="voiceHint">Hold the red dot and drum a rhythm into the mic: beatbox, clap or knock. Or tap one by hand, or make one. Tap the ring to play, hold it to stop, move it to scratch.</p>
   </div>
   <div class="vols">
-    <div class="h"><span class="lbl">voice volume</span><input type="range" id="vVol" min="0" max="1" step="0.001" value="0.85" aria-label="Voice volume"></div>
+    <div class="h"><span class="lbl">rhythm volume</span><input type="range" id="vVol" min="0" max="1" step="0.001" value="0.85" aria-label="Rhythm volume"></div>
     <div class="h"><span class="lbl">music volume</span><input type="range" id="mVol" min="0" max="1" step="0.001" value="0.8" aria-label="Music volume"></div>
   </div>
   <!-- engine hooks from v15 kept off screen so its code runs unchanged -->
