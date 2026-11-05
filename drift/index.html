@@ -49,7 +49,18 @@ input[type=range]::-moz-range-thumb{width:32px;height:32px;border-radius:50%;bac
 button:focus-visible,input:focus-visible{outline:2px solid currentColor;outline-offset:4px}
 [hidden]{display:none!important}
 .blank .small{visibility:hidden}
-@media (max-width:640px){.stage{gap:10px}.v{width:26px}.v .lbl{font-size:.52rem;letter-spacing:.06em}.v .e{font-size:.56rem}.v input{height:clamp(150px,30vh,240px)}.deck{gap:4px}.side{gap:6px}.v .lbl,.v .e{overflow:visible;width:26px;text-align:center;display:flex;justify-content:center}}
+/* phones (Ville, 5 Nov 2026): every slider lies flat at full width, stacked, voice pair above the ring and style pair below */
+@media (max-width:640px){.stage{gap:8px;padding-top:10px;padding-bottom:14px}
+  .deck{grid-template-columns:1fr;gap:8px;align-content:center}
+  .side{display:grid;grid-template-columns:1fr;gap:6px;width:100%}
+  .v{width:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:0 10px}
+  .v .lbl{grid-column:2;grid-row:1;text-align:center;font-size:.6rem;letter-spacing:.12em}
+  .v .e{font-size:.62rem;grid-row:1;width:auto;display:block}
+  .v .lbl+.e{grid-column:3;text-align:right}.v .e:last-child{grid-column:1;text-align:left}
+  .v input{grid-column:1/-1;grid-row:2;writing-mode:horizontal-tb;direction:ltr;width:100%;height:32px;min-width:0}
+  .v input::-webkit-slider-runnable-track{width:auto;height:12px}.v input::-webkit-slider-thumb{margin-left:0;margin-top:-10px}
+  .ring{max-width:none;width:min(100%,60dvh);width:min(100%,60vh)}
+  @supports (height:1dvh){.ring{width:min(100%,60dvh)}}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
 </style>
 <!-- lil.audio password gate (same password and look as lil.audio/play) -->
