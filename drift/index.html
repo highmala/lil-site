@@ -530,19 +530,28 @@ $('#tune').addEventListener('input',()=>{clearTimeout(renderTimer);renderTimer=s
 const cv=$('#viz'),cx=cv.getContext('2d');
 function size(){const r=cv.getBoundingClientRect(),dpr=Math.min(MOBILE?1.5:2,window.devicePixelRatio||1);cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr)}
 addEventListener('resize',size);
+// smooth clock for drawing (Ville, 6 Nov 2026: movement less stepped). The audio clock only moves in chunks, very
+// big ones on phones, so the picture follows the browser's frame clock and is only gently pulled back to the audio.
+let vT=null,vP=0,lastF=0,playA=1;
+function heardNow(){const pn=performance.now()/1000;let raw;
+  try{const ts=ac.getOutputTimestamp&&ac.getOutputTimestamp();raw=ts&&ts.contextTime>0&&ts.performanceTime>0?ts.contextTime+(pn-ts.performanceTime/1000):null}catch(e){raw=null}
+  if(raw==null)raw=ac.currentTime-(ac.outputLatency||0);
+  if(vT==null||Math.abs(raw-(vT+pn-vP))>.15){vT=raw;vP=pn;return vT}
+  vT+=pn-vP;vP=pn;vT+=(raw-vT)*.04;return vT}
 function draw(){requestAnimationFrame(draw);const W=cv.width,H=cv.height;if(!W)return;cx.clearRect(0,0,W,H);
+  const fnow=performance.now(),dt=Math.min(.1,lastF?(fnow-lastF)/1000:.016);lastF=fnow;const ease=k=>1-Math.exp(-dt/k);
   const R0=Math.min(W,H)/2,c=W/2,cy=H/2,ink=getComputedStyle(document.documentElement).getPropertyValue('--ink').trim()||'255 255 255';
   const band=R0*.15,inner=R0*.18,laneR=k=>R0*.93-(LANES-1-k)*band*1.08;
   for(let k=0;k<LANES;k++){const r=laneR(k);cx.strokeStyle=`rgb(${ink} / .08)`;cx.lineWidth=Math.max(1,band*.06);cx.beginPath();cx.arc(c,cy,r-band*.45,0,Math.PI*2);cx.stroke()}
   if(rec){const h=rec.hist,n=h.length;cx.fillStyle='#ff6b6b';for(let i=0;i<n;i++){const a=-Math.PI/2-(n-i)/120*Math.PI*2,l=clamp(h[i]*14)*band*1.6;
       cx.globalAlpha=.25+.75*i/n;const r=laneR(0)-band*.45;cx.beginPath();cx.moveTo(c+Math.cos(a)*(r-l/2),cy+Math.sin(a)*(r-l/2));cx.lineTo(c+Math.cos(a)*(r+l/2),cy+Math.sin(a)*(r+l/2));cx.lineWidth=Math.max(1.5,R0*.012);cx.strokeStyle='#ff6b6b';cx.stroke()}cx.globalAlpha=1}
-  if(!LOOP||!ac)return;const now=playing&&!grab?ac.currentTime-(ac.outputLatency||0):T0+vpos;
+  if(!LOOP||!ac)return;const live_=playing&&!grab;if(!live_)vT=null;const now=live_?heardNow():T0+vpos;playA+=((playing?1:.6)-playA)*ease(.25);
   for(const ly of layers){if(!ly.r)continue;const env=ly.r.env,E=env.length,dur=ly.r.buf.duration/rateOf(ly);
     for(let k=0;k<LANES;k++){const L=ly.lanes[k],Lk=laneLen(k),r=laneR(k)-band*.45;
       // the bars' height follows how much of the loop is left: as memory fades it eases slowly down to a thin line
       const ll=k?laneLvl(k):1,tgt=ll<.02?0:L.n>L.join||(L.n===L.join&&L.last!=null)?clamp(Math.sqrt((L.last??ll)/ll)):.12;
-      L.vis=L.vis==null?tgt:L.vis+(tgt-L.vis)*.025;const vis=L.vis;
-      let lvl=(.3+.7*Math.sqrt(vis))*(playing?1:.6);
+      L.vis=L.vis==null?tgt:L.vis+(tgt-L.vis)*ease(.7);const vis=L.vis;
+      let lvl=(.3+.7*Math.sqrt(vis))*playA;
       // where this layer last started in this lane (or will start)
       const s=playing?(L.lastT!=null?(L.lastT<=now?L.lastT:L.lastT-Lk):L.next-Lk):T0+ly.off;
       cx.strokeStyle=LCOL[k];cx.lineWidth=Math.max(1.2,2*Math.PI*r/E*.55*dur/Lk);cx.globalAlpha=clamp(lvl,0,1);cx.beginPath();
