@@ -18,7 +18,7 @@ body{font-family:var(--f);font-weight:bold;font-size:15px;line-height:1.4;-webki
 button,input{font-family:inherit;font-weight:bold;color:inherit}
 .stage{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;gap:14px;max-width:980px;margin:0 auto;
   padding:16px max(16px,env(safe-area-inset-right,0px)) 22px max(16px,env(safe-area-inset-left,0px))}
-.logo{margin:0;font-size:1.5rem;line-height:1;text-transform:lowercase;opacity:.55}
+.logo{margin:0;font-size:1.5rem;line-height:1;text-transform:lowercase;opacity:.55;text-align:center}
 .deck{flex:1;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:clamp(8px,3vw,40px)}
 .side{display:flex;gap:clamp(6px,2.4vw,30px);justify-content:center}
 .v{display:flex;flex-direction:column;align-items:center;gap:6px;width:46px}
@@ -38,6 +38,11 @@ button,input{font-family:inherit;font-weight:bold;color:inherit}
 .small{display:flex;gap:26px}
 .link{background:none;border:0;padding:4px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:4px;font-size:.95rem;opacity:.75}
 .link:hover{opacity:1}
+.spd{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:4px 10px;width:min(340px,100%)}
+.spd .lbl{grid-column:1/-1;text-align:center;font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;opacity:.55}
+.spd .e{font-size:.68rem;opacity:.45}
+.spd input{width:100%;height:32px;min-width:0}
+.spd input::-webkit-slider-runnable-track{height:12px}.spd input::-webkit-slider-thumb{margin-top:-10px}
 .hint{margin:0;font-size:.8rem;opacity:.5;text-align:center;max-width:52ch;min-height:2.3em}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;margin:0;cursor:pointer}
 input[type=range]::-webkit-slider-runnable-track{border-radius:6px;background:rgba(127,127,127,.35)}
@@ -59,6 +64,7 @@ button:focus-visible,input:focus-visible{outline:2px solid currentColor;outline-
   .v .lbl+.e{grid-column:3;text-align:right}.v .e:last-child{grid-column:1;text-align:left}
   .v input{grid-column:1/-1;grid-row:2;writing-mode:horizontal-tb;direction:ltr;width:100%;height:32px;min-width:0}
   .v input::-webkit-slider-runnable-track{width:auto;height:12px}.v input::-webkit-slider-thumb{margin-left:0;margin-top:-10px}
+  .spd{width:100%}
   .ring{max-width:none;width:min(100%,60dvh);width:min(100%,60vh)}
   @supports (height:1dvh){.ring{width:min(100%,60dvh)}}}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
@@ -103,6 +109,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
     </div>
   </div>
   <div class="under">
+    <div class="spd"><span class="lbl">speed</span><span class="e">slow</span><input type="range" id="speed" min="-12" max="12" step="1" value="0" aria-label="Speed: slow and low (left) to fast and high (right), like a tape"><span class="e">fast</span></div>
     <div class="small"><button class="link" id="harmBtn">new harmony</button><button class="link" id="clearBtn">clear</button></div>
     <p class="hint" id="hint">Hold the red dot and sing. Let go and your tune loops in four copies that slowly drift apart. Sing again while it plays to add a layer.</p>
   </div>
@@ -209,7 +216,7 @@ function renderTuned(v,len,tune){const sr=v.buf.sampleRate,x=v.buf.getChannelDat
   else{let j=0,tau=M[0]||0;
     while(tau<N){while(j+1<M.length&&Math.abs(M[j+1]-tau)<=Math.abs(M[j]-tau))j++;const P=PP[j];let R=1;
       if(MV[j]){const f=Math.round(M[j]/sr/.01),p=v.ps[f]||0,nm=v.nm[f]||0;
-        if(p>0&&nm){const pm=69+12*Math.log2(p/440),T=snapM(nm-v.cents)+0;R=Math.pow(2,(c1*(T-nm)-fl*(pm-nm))/12)}}
+        if(p>0&&nm){const pm=69+12*Math.log2(p/440),T=snapM(nm-v.cents)+(v.sh||0);R=Math.pow(2,(c1*(T-nm)-fl*(pm-nm))/12)}}
       const c=M[j],o=Math.round(tau);for(let i=-P;i<P;i++){const si=c+i,oi=o+i;if(si<0||si>=x.length||oi<0||oi>=out.length)continue;const w=.5+.5*Math.cos(Math.PI*i/P);out[oi]+=x[si]*w;ws[oi]+=w}
       tau+=MV[j]?P/R:P}
     for(let i=0;i<out.length;i++)if(ws[i]>1)out[i]/=ws[i]}
@@ -275,6 +282,9 @@ const echoTime=()=>{if(!LOOP)return .375;let b=LOOP.beat||LOOP.L/8;while(b>.9)b/
 // LOOP: the first take sets the loop length L. Every take becomes a layer; each layer repeats in four lanes of
 // slightly different lengths (SOMA Cosmos style), placed in a stereo formation, so the copies slowly drift apart.
 let LOOP=null,layers=[],playing=false,T0=0,timer=null,hNext=0,hN=0,frozenT=0;
+// speed (Ville, 6 Nov 2026): a tape-speed slider in semitone steps, half to double. Loops get faster and higher;
+// the harmony moves with them so it stays in tune. A layer sung at another speed keeps its own place (ly.k).
+let SEMI=0;const SPD=()=>Math.pow(2,SEMI/12),rateOf=ly=>SPD()/ly.k,hsh=()=>LOOP?SEMI-(LOOP.s0||0):0;
 const LANES=4,LMUL=[0,1,-1,2],LPAN=[-.12,.72,-.72,.38],LCOL=['#FFD60A','#4ECDC4','#FF6B6B','#A9A7FF'];
 const driftAmt=()=>.05*Math.pow(SL('drift'),1.4);              // lane length difference, as a share of the loop
 const laneLen=k=>LOOP.L*(1+LMUL[k]*driftAmt());
@@ -284,7 +294,7 @@ let renderTimer=0;
 function rerender(){for(const ly of layers){const r=renderTuned(ly.v,ly.len,SL('tune'));ly.r=r}}
 // lanes: n counts passes since play started (copy k joins on pass k), age counts how often it has sounded (for fading)
 function newLayer(v,tStart,first,now){
-  const len=first?LOOP.L:Math.min(LOOP.L,v.end+.15);const ly={v,len,tStart,off:((tStart-T0)%LOOP.L+LOOP.L)%LOOP.L,lvl:1,
+  const len=first?LOOP.L:Math.min(LOOP.L,v.end+.15);const ly={v,len,k:SPD(),tStart,off:((tStart-T0)%LOOP.L+LOOP.L)%LOOP.L,lvl:1,
     lanes:[...Array(LANES)].map((_,k)=>({next:first||now?tStart:tStart+laneLen(k),n:0,join:k,age:0}))};
   ly.r=renderTuned(v,len,SL('tune'));return ly}
 function addLayer(ly){
@@ -298,14 +308,14 @@ function trigger(ly,k,t,off=0){const L=ly.lanes[k],age=L.age,mem=memPass(),drift
   let g=ly.lvl*laneLvl(k)*Math.pow(mem,age)*(ly.dying?Math.pow(.5,age+1):1);L.age++;if(g<.015)return 0;
   const rev=k>0&&age>2&&Math.random()<.12*drift;
   const src=ac.createBufferSource();src.buffer=rev?ly.r.rbuf:ly.r.buf;
-  src.playbackRate.value=1+(k?(Math.random()-.5)*.008*drift:0); // a few cents of tape wobble on the copies
+  const rt=rateOf(ly);src.playbackRate.value=rt*(1+(k?(Math.random()-.5)*.008*drift:0));src.rt=rt; // a few cents of tape wobble on the copies
   const lp=ac.createBiquadFilter();lp.type='lowpass';lp.Q.value=.5;
   lp.frequency.value=Math.max(1400,16000*Math.pow(.86-.1*(1-SL('memory')),age)); // each pass a little darker
   const pan=ac.createStereoPanner();pan.pan.value=LPAN[k]+(Math.random()-.5)*.1*drift;
   const gn=ac.createGain();gn.gain.value=g;
   src.connect(lp);lp.connect(pan);pan.connect(gn);gn.connect(laneBus);
   if(age>0){const hs=ac.createGain();hs.gain.value=g*clamp(age*.06,0,.4);pan.connect(hs);hs.connect(hallG)}
-  src.start(Math.max(t,ac.currentTime),off);const s={src,gn,end:t+src.buffer.duration-off};live.push(s);src.onended=()=>{const i=live.indexOf(s);if(i>=0)live.splice(i,1)};
+  src.start(Math.max(t,ac.currentTime),off*rt);const s={src,gn,end:t+src.buffer.duration/rt-off};live.push(s);src.onended=()=>{const i=live.indexOf(s);if(i>=0)live.splice(i,1)};
   return g}
 function tick(){if(!playing||!LOOP)return;const now=ac.currentTime,ahead=now+(MOBILE?.45:.25);
   for(const ly of layers)for(let k=0;k<LANES;k++){const L=ly.lanes[k];
@@ -319,7 +329,7 @@ function tick(){if(!playing||!LOOP)return;const now=ac.currentTime,ahead=now+(MO
 function startPlay(phase=0){if(!LOOP)return;ensureAudio();if(playing)return;playing=true;
   const t=ac.currentTime+.06;T0=t-phase;hN=Math.ceil(phase/LOOP.L-1e-6);hNext=T0+hN*LOOP.L;
   for(const ly of layers)ly.lanes.forEach((L,k)=>{L.next=T0+ly.off;L.join=k;L.n=0;L.last=undefined;L.lastT=undefined;
-    while(L.next<t-.01){const into=t-L.next;if(k===0&&into<ly.r.buf.duration-.05){L.last=trigger(ly,0,t,into);L.lastT=L.next}L.next+=LOOP.L}});
+    while(L.next<t-.01){const into=t-L.next;if(k===0&&into<ly.r.buf.duration/rateOf(ly)-.05){L.last=trigger(ly,0,t,into);L.lastT=L.next}L.next+=LOOP.L}});
   harmG.gain.cancelScheduledValues(t);harmG.gain.setValueAtTime(phase>.05?.0001:0,t);if(phase>.05){harmFrom(t);harmG.gain.setTargetAtTime(.9,t,.15)}
   clearInterval(timer);timer=setInterval(tick,25);tick()}
 // stop: the loops and chords let go quickly, the echoes and hall ring out
@@ -333,7 +343,7 @@ function clearAll(){stopPlay();layers=[];LOOP=null;KEY=null;CHORDS=null;$('.stag
 // one soft chord bed under the loop: chords picked to fit what was sung, a quiet root underneath.
 // "new harmony" picks other fitting chords and another sound.
 let CHORDS=null,hFlav=0;const FLAV=['warm','glass','choir'],harmVoices=[];
-function loopNotes(){const out=[];for(const ly of layers)for(const n of ly.v.notes){out.push({t:((ly.off+n.t)%LOOP.L),dur:n.dur,m:n.m-ly.v.cents})}return out.sort((a,b)=>a.t-b.t)}
+function loopNotes(){const out=[];for(const ly of layers){const q=1/rateOf(ly);for(const n of ly.v.notes){out.push({t:((ly.off+n.t*q)%LOOP.L),dur:n.dur*q,m:n.m-ly.v.cents})}}return out.sort((a,b)=>a.t-b.t)}
 function pickChords(random){const L=LOOP.L,notes=loopNotes(),S=L<2.4?1:L<5.5?2:4,sc=SCALE[KEY.mode];
   const bounds=[0];for(let i=1;i<S;i++){let b=L*i/S;const near=notes.filter(n=>Math.abs(n.t-b)<.22*L/S).sort((a,c)=>Math.abs(a.t-b)-Math.abs(c.t-b))[0];if(near)b=near.t-.03;bounds.push(b)}bounds.push(L);
   const deg2pc=d=>(KEY.root+sc[((d%7)+7)%7])%12,out=[];
@@ -352,7 +362,7 @@ function voicing(d){const sc=SCALE[KEY.mode],m=k=>{const o=Math.floor(k/7);retur
   const pad=[d,d+4,...extra,d+9].map(k=>m(k)+sh).filter((x,i,a)=>a.indexOf(x)===i);
   let root=m(d);while(root>=48)root-=12;while(root<36)root+=12;return{pad,root}}
 function harmStop(t){for(const h of harmVoices.splice(0)){try{h.g.gain.cancelScheduledValues(t);h.g.gain.setTargetAtTime(0,t,.08);h.o.forEach(o=>o.stop(t+.5))}catch(e){}}}
-function padNote(t,hold,m,v,pan,fl){const f=mtof(m),att=fl==='glass'?.04:.9,rel=fl==='glass'?2.2:1.6,end=t+Math.max(att,hold),stop=end+rel*2;
+function padNote(t,hold,m,v,pan,fl){const f=mtof(m+hsh()),att=fl==='glass'?.04:.9,rel=fl==='glass'?2.2:1.6,end=t+Math.max(att,hold),stop=end+rel*2;
   const g=ac.createGain();g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(v,t+att);
   if(fl==='glass')g.gain.setTargetAtTime(v*.45,t+att,.6);g.gain.setValueAtTime(fl==='glass'?v*.45:v,end);g.gain.setTargetAtTime(0,end,rel/3);
   const p=ac.createStereoPanner();p.pan.value=pan;g.connect(p);p.connect(harmIn);const os=[];
@@ -364,11 +374,11 @@ function padNote(t,hold,m,v,pan,fl){const f=mtof(m),att=fl==='glass'?.04:.9,rel=
     for(const[fr,q,a]of[[750,7,1],[1150,8,.55],[2850,9,.22]]){const bp=ac.createBiquadFilter();bp.type='bandpass';bp.frequency.value=fr*(m>66?1.08:1);bp.Q.value=q;const bg=ac.createGain();bg.gain.value=a*2.2;bus.connect(bp);bp.connect(bg);bg.connect(g)}
     const a1=O('sawtooth',f*Math.pow(2,4/1200),.4,bus),a2=O('sawtooth',f*Math.pow(2,-5/1200),.4,bus);
     const lfo=ac.createOscillator();lfo.frequency.value=4.6+Math.random()*.6;const lg=ac.createGain();lg.gain.value=f*.0035;lfo.connect(lg);lg.connect(a1.frequency);lg.connect(a2.frequency);lfo.start(t+att*.6);lfo.stop(stop);os.push(lfo)}
-  harmVoices.push({g,o:os,stop});return g}
-function bassNote(t,hold,m){const f=mtof(m),g=ac.createGain(),end=t+hold;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.26,t+.35);g.gain.setValueAtTime(.26,end);g.gain.setTargetAtTime(0,end,.4);
+  harmVoices.push({g,o:os,stop,sh:hsh()});return g}
+function bassNote(t,hold,m){const f=mtof(m+hsh()),g=ac.createGain(),end=t+hold;g.gain.setValueAtTime(0,t);g.gain.linearRampToValueAtTime(.26,t+.35);g.gain.setValueAtTime(.26,end);g.gain.setTargetAtTime(0,end,.4);
   const lp=ac.createBiquadFilter();lp.type='lowpass';lp.frequency.value=260;lp.connect(g);g.connect(harmIn);const os=[];
   for(const[ty,fr,a]of[['sine',f,1],['triangle',f*2,.18]]){const o=ac.createOscillator();o.type=ty;o.frequency.value=fr;const og=ac.createGain();og.gain.value=a;o.connect(og);og.connect(lp);o.start(t);o.stop(end+2);os.push(o)}
-  harmVoices.push({g,o:os,stop:end+2})}
+  harmVoices.push({g,o:os,stop:end+2,sh:hsh()})}
 function scheduleHarmony(t0){if(!CHORDS)return;const fl=FLAV[hFlav%FLAV.length];
   for(let i=harmVoices.length-1;i>=0;i--)if(harmVoices[i].stop<ac.currentTime)harmVoices.splice(i,1);
   CHORDS.list.forEach((c,i)=>{const t=t0+c.t,{pad,root}=voicing(c.d),v=.085*(fl==='glass'?1.3:1)*4/Math.max(4,pad.length);
@@ -395,12 +405,12 @@ function useFirst(v){
   if(on.length>=3){const iois=[];for(let i=1;i<on.length;i++)iois.push(on[i]-on[i-1]);beat=median(iois.filter(d=>d>.12));
     if(beat>.15&&beat<1.3){const span=v.end-on[0]+.02;const k=Math.ceil(span/beat-.15);const Lb=k*beat;if(Lb>=v.end-.08&&Lb-v.end<beat*1.1)L=Lb}}
   L=Math.max(.9,L);
-  LOOP={L,beat,pk:v.rawPk};prepTuning(v);
+  LOOP={L,beat,pk:v.rawPk,s0:SEMI};prepTuning(v);
   layers=[];const ly=newLayer(v,0,true);ly.off=0;layers.push(ly);pickChords(false);
   $('.stage').classList.remove('blank');applySpace();
   startPlay();
   setHint('Looping '+L.toFixed(1)+' s in '+NOTE[KEY.root]+' '+KEY.mode+'. Sing again while it plays to add a layer. Tap the rings to stop, or hold and turn them to scratch.')}
-function useOverdub(v,tStart,now){v.cents=LOOP.firstCents??centreOf(v.notes);prepTuning(v);
+function useOverdub(v,tStart,now){v.sh=hsh();v.cents=(LOOP.firstCents??centreOf(v.notes))+v.sh;prepTuning(v);
   const ly=newLayer(v,tStart,false,now);addLayer(ly);setHint('Added a layer. '+(layers.length>1?layers.length+' layers drifting.':''))}
 function takeIn(buf,tStart){const v=prepTake(buf);if(!v){setHint("I couldn't hear any singing there. Try a little louder.");return}
   if(!LOOP||!layers.length&&!playing){useFirst(v);LOOP.firstCents=v.cents;return}
@@ -498,23 +508,37 @@ function vinylInit(lim){
 $('#harmBtn').addEventListener('click',()=>{ensureAudio();newHarmony()});
 $('#clearBtn').addEventListener('click',clearAll);
 $('#space').addEventListener('input',applySpace);
+// speed: everything that counts in seconds is stretched around now, sounding loops glide to the new rate
+function setSpeed(s){if(s===SEMI)return;const q=Math.pow(2,(SEMI-s)/12);SEMI=s;if(!LOOP)return;
+  const n=ac?ac.currentTime:0;LOOP.L*=q;LOOP.beat*=q;
+  for(const ly of layers){ly.off*=q;for(const L of ly.lanes){if(playing){L.next=n+(L.next-n)*q;if(L.lastT!=null)L.lastT=n+(L.lastT-n)*q}}}
+  if(CHORDS)for(const c of CHORDS.list){c.t*=q;c.len*=q}
+  vpos*=q;park*=q;
+  if(playing){T0=n-(n-T0)*q;hNext=n+(hNext-n)*q;
+    for(const s of live){if(!s.src.rt)continue;const ly=layers.find(l=>l.r&&(l.r.buf===s.src.buffer||l.r.rbuf===s.src.buffer));if(!ly)continue;const r=rateOf(ly);s.src.playbackRate.setTargetAtTime(s.src.playbackRate.value*r/s.src.rt,n,.04);s.src.rt=r}
+    for(const h of harmVoices)for(const o of h.o)try{o.detune.setTargetAtTime(100*(hsh()-(h.sh??0)),n,.04)}catch(e){}}}
+let spdT=0;
+$('#speed').addEventListener('input',e=>{setSpeed(+e.target.value)});
+// on letting go, the chord bed starts fresh at the new speed so its chords line up again
+$('#speed').addEventListener('change',()=>{if(!playing||!LOOP||!ac)return;const n=ac.currentTime;harmStop(n);hN=Math.max(1,Math.ceil((n+.05-T0)/LOOP.L));hNext=T0+hN*LOOP.L;harmFrom(n+.03);
+  setHint(SEMI===0?'Normal speed.':SEMI>0?'Faster and higher.':'Slower and lower.')});
 $('#tune').addEventListener('input',()=>{clearTimeout(renderTimer);renderTimer=setTimeout(rerender,120)});
 
 /* ---------- rings ---------- */
-// one ring per lane, outer ring = the loop itself. Each ring turns once per its own length, so the copies
+// one ring per lane. The loop itself is the inner ring and each copy joins one ring further out (Ville, 6 Nov 2026). Each ring turns once per its own length, so the copies
 // visibly slip against each other. The playhead is fixed at the top, like a music box.
 const cv=$('#viz'),cx=cv.getContext('2d');
 function size(){const r=cv.getBoundingClientRect(),dpr=Math.min(MOBILE?1.5:2,window.devicePixelRatio||1);cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr)}
 addEventListener('resize',size);
 function draw(){requestAnimationFrame(draw);const W=cv.width,H=cv.height;if(!W)return;cx.clearRect(0,0,W,H);
   const R0=Math.min(W,H)/2,c=W/2,cy=H/2,ink=getComputedStyle(document.documentElement).getPropertyValue('--ink').trim()||'255 255 255';
-  const band=R0*.15,inner=R0*.18;
-  for(let k=0;k<LANES;k++){const r=R0*.93-k*band*1.08;cx.strokeStyle=`rgb(${ink} / .08)`;cx.lineWidth=Math.max(1,band*.06);cx.beginPath();cx.arc(c,cy,r-band*.45,0,Math.PI*2);cx.stroke()}
+  const band=R0*.15,inner=R0*.18,laneR=k=>R0*.93-(LANES-1-k)*band*1.08;
+  for(let k=0;k<LANES;k++){const r=laneR(k);cx.strokeStyle=`rgb(${ink} / .08)`;cx.lineWidth=Math.max(1,band*.06);cx.beginPath();cx.arc(c,cy,r-band*.45,0,Math.PI*2);cx.stroke()}
   if(rec){const h=rec.hist,n=h.length;cx.fillStyle='#ff6b6b';for(let i=0;i<n;i++){const a=-Math.PI/2-(n-i)/120*Math.PI*2,l=clamp(h[i]*14)*band*1.6;
-      cx.globalAlpha=.25+.75*i/n;const r=R0*.93-band*.45;cx.beginPath();cx.moveTo(c+Math.cos(a)*(r-l/2),cy+Math.sin(a)*(r-l/2));cx.lineTo(c+Math.cos(a)*(r+l/2),cy+Math.sin(a)*(r+l/2));cx.lineWidth=Math.max(1.5,R0*.012);cx.strokeStyle='#ff6b6b';cx.stroke()}cx.globalAlpha=1}
+      cx.globalAlpha=.25+.75*i/n;const r=laneR(0)-band*.45;cx.beginPath();cx.moveTo(c+Math.cos(a)*(r-l/2),cy+Math.sin(a)*(r-l/2));cx.lineTo(c+Math.cos(a)*(r+l/2),cy+Math.sin(a)*(r+l/2));cx.lineWidth=Math.max(1.5,R0*.012);cx.strokeStyle='#ff6b6b';cx.stroke()}cx.globalAlpha=1}
   if(!LOOP||!ac)return;const now=playing&&!grab?ac.currentTime-(ac.outputLatency||0):T0+vpos;
-  for(const ly of layers){if(!ly.r)continue;const env=ly.r.env,E=env.length,dur=ly.r.buf.duration;
-    for(let k=0;k<LANES;k++){const L=ly.lanes[k],Lk=laneLen(k),r=R0*.93-k*band*1.08-band*.45;
+  for(const ly of layers){if(!ly.r)continue;const env=ly.r.env,E=env.length,dur=ly.r.buf.duration/rateOf(ly);
+    for(let k=0;k<LANES;k++){const L=ly.lanes[k],Lk=laneLen(k),r=laneR(k)-band*.45;
       // the bars' height follows how much of the loop is left: as memory fades it eases slowly down to a thin line
       const ll=k?laneLvl(k):1,tgt=ll<.02?0:L.n>L.join||(L.n===L.join&&L.last!=null)?clamp(Math.sqrt((L.last??ll)/ll)):.12;
       L.vis=L.vis==null?tgt:L.vis+(tgt-L.vis)*.025;const vis=L.vis;
