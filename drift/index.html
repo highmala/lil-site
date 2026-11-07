@@ -101,7 +101,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
     </div>
     <div class="ring">
       <canvas id="viz" aria-label="The loops go round in rings, one ring per drifting copy. Tap to play or stop."></canvas>
-      <button id="main" aria-label="Hold to sing"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="mainIcon" d="M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z" fill="currentColor"/></svg></button>
+      <button id="main" aria-label="Hold to sing"><svg viewBox="0 0 24 24" aria-hidden="true"><path id="mainIcon" d="" fill="currentColor"/></svg></button>
     </div>
     <div class="side">
       <div class="v"><span class="lbl">tuning</span><span class="e">robot</span><input type="range" id="tune" min="0" max="1" step="0.001" value="0.5" aria-label="Tuning: human voice (left or bottom) to robot-clean (right or top)"><span class="e">human</span></div>
@@ -480,7 +480,8 @@ $('#voiceFile').addEventListener('change',async e=>{const f=e.target.files[0];if
   e.target.value=''});
 
 /* ---------- controls ---------- */
-const ICON={mic:'M12 14a3 3 0 0 0 3-3V5a3 3 0 0 0-6 0v6a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.9V21h2v-3.1A7 7 0 0 0 19 11z',stop:'M6 6h12v12H6z'};
+// plain red dot, no microphone picture (Ville, 7 Nov 2026); the stop square still shows while singing
+const ICON={mic:'',stop:'M6 6h12v12H6z'};
 function mainUI(){$('#mainIcon').setAttribute('d',ICON[rec?'stop':'mic']);$('#main').classList.toggle('recording',!!rec);$('#main').setAttribute('aria-label',rec?'Stop singing':'Hold to sing')}
 {let downAt=0,wasRec=false;const mb=$('#main');
   mb.addEventListener('pointerdown',e=>{downAt=performance.now();wasRec=!!rec;sbHold=!rec;if(!rec)startSing();try{mb.setPointerCapture(e.pointerId)}catch(_){}});
