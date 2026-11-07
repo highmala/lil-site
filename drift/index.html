@@ -97,7 +97,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
   <div class="deck">
     <div class="side">
       <div class="v"><span class="lbl">drift</span><span class="e">apart</span><input type="range" id="drift" min="0" max="1" step="0.001" value="0.45" aria-label="Drift: together (bottom) to drifting apart (top)"><span class="e">together</span></div>
-      <div class="v"><span class="lbl">memory</span><span class="e">forever</span><input type="range" id="memory" min="0" max="1" step="0.001" value="0.8" aria-label="Memory: loops fade quickly (bottom) to loops last forever (top)"><span class="e">fades</span></div>
+      <div class="v"><span class="lbl">memory</span><span class="e">fast</span><input type="range" id="memory" min="0" max="1" step="0.001" value="0.2" aria-label="Memory: loops last forever (left or bottom) to loops fade fast (right or top)"><span class="e">forever</span></div>
     </div>
     <div class="ring">
       <canvas id="viz" aria-label="The loops go round in rings, one ring per drifting copy. Tap to play or stop."></canvas>
@@ -293,7 +293,9 @@ let SEMI=0;const SPD=()=>Math.pow(2,SEMI/12),rateOf=ly=>SPD()/ly.k,hsh=()=>LOOP?
 const LANES=4,LMUL=[0,1,-1,2],LPAN=[-.12,.72,-.72,.38],LCOL=['#FFD60A','#4ECDC4','#FF6B6B','#A9A7FF'];
 const driftAmt=()=>.05*Math.pow(SL('drift'),1.4);              // lane length difference, as a share of the loop
 const laneLen=k=>LOOP.L*(1+LMUL[k]*driftAmt());
-const memPass=()=>1-.42*Math.pow(1-SL('memory'),1.5);           // level kept per pass: .58 (fades fast) to 1 (forever)
+// memory slider flipped (Ville, 7 Nov 2026): forever on the left, fast on the right, so the slider value is how fast loops fade
+const MEM=()=>1-SL('memory');
+const memPass=()=>1-.42*Math.pow(1-MEM(),1.5);           // level kept per pass: .58 (fades fast) to 1 (forever)
 const laneLvl=k=>k===0?1:.62*clamp(SL('drift')*5);              // with no drift the copies would only stack, so they stay out
 let renderTimer=0;
 function rerender(){for(const ly of layers){const r=renderTuned(ly.v,ly.len,SL('tune'));ly.r=r}}
@@ -315,7 +317,7 @@ function trigger(ly,k,t,off=0){const L=ly.lanes[k],age=L.age,mem=memPass(),drift
   const src=ac.createBufferSource();src.buffer=rev?ly.r.rbuf:ly.r.buf;
   const rt=rateOf(ly);src.playbackRate.value=rt*(1+(k?(Math.random()-.5)*.008*drift:0));src.rt=rt; // a few cents of tape wobble on the copies
   const lp=ac.createBiquadFilter();lp.type='lowpass';lp.Q.value=.5;
-  lp.frequency.value=Math.max(1400,16000*Math.pow(.86-.1*(1-SL('memory')),age)); // each pass a little darker
+  lp.frequency.value=Math.max(1400,16000*Math.pow(.86-.1*(1-MEM()),age)); // each pass a little darker
   const pan=ac.createStereoPanner();pan.pan.value=LPAN[k]+(Math.random()-.5)*.1*drift;
   const gn=ac.createGain();gn.gain.value=g;
   src.connect(lp);lp.connect(pan);pan.connect(gn);gn.connect(laneBus);
