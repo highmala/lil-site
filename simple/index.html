@@ -1003,7 +1003,7 @@ async function startSing(){
     if(!R.started&&lv>1e-5)R.floor=R.floor?Math.min(R.floor,lv):lv;if(el<.2)return;
     // noise floor = the quietest block before singing, so the thump of a finger on the phone no longer raises the gate;
     // phone mics without auto gain are quiet, so the gate sits low there (Ville, 7 Nov 2026)
-    const on=clamp(R.floor*2.5,MOBILE?.004:.007,.03);
+    const on=clamp(R.floor*2.8,MOBILE?.0055:.008,.03); // a touch less eager than 7 Nov morning (Ville)
     // singing starts on two loud blocks in a row and the loudness reference ignores one-block bumps, so the thump of a
     // finger on the phone can neither start the take nor make the singing after it count as quiet (Ville, 7 Nov 2026)
     if(!R.started){if(lv>on&&R.prev>on){R.started=true;R.peak=Math.min(lv,R.prev)}else if(el>8)stopSing(true);R.prev=lv;return}
