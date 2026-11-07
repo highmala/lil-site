@@ -47,6 +47,8 @@ const validKey = k => k && Number.isInteger(k.root) && k.root >= 0 && k.root < 1
 
 module.exports = async (req, res) => {
   res.setHeader('Cache-Control', 'no-store');
+  // GET is a health check: is the room store connected?
+  if (req.method === 'GET') { res.status(200).json({on: !!(URL_ && TOKEN)}); return; }
   if (req.method !== 'POST') { res.status(405).json({on: false}); return; }
   if (!URL_ || !TOKEN) { res.status(200).json({on: false}); return; }
   let b = req.body;
