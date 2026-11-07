@@ -19,6 +19,9 @@ button,input{font-family:inherit;font-weight:bold;color:inherit}
 .stage{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;gap:14px;max-width:980px;margin:0 auto;
   padding:16px max(16px,env(safe-area-inset-right,0px)) 22px max(16px,env(safe-area-inset-left,0px))}
 .logo{margin:0;font-size:1.5rem;line-height:1;text-transform:lowercase;opacity:.55;text-align:center}
+.stage .logo{position:relative}
+.near{position:absolute;left:100%;top:-.1em;margin-left:.35em;font-size:.4em;letter-spacing:.25em;white-space:nowrap;transition:opacity .6s}
+.near:empty{opacity:0}
 .deck{flex:1;display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:clamp(8px,3vw,40px)}
 .side{display:flex;gap:clamp(6px,2.4vw,30px);justify-content:center}
 .v{display:flex;flex-direction:column;align-items:center;gap:6px;width:46px}
@@ -93,7 +96,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
 
 
 <div class="stage blank">
-  <h1 class="logo">sonne</h1>
+  <h1 class="logo">sonne<span class="near" id="near" aria-live="polite"></span></h1>
   <div class="deck">
     <div class="side">
       <div class="v"><span class="lbl">drift</span><span class="e">apart</span><input type="range" id="drift" min="0" max="1" step="0.001" value="0.45" aria-label="Drift: together (bottom) to drifting apart (top)"><span class="e">together</span></div>
@@ -201,8 +204,31 @@ function pitchMarks(buf,ps){const x=buf.getChannelData(0),sr=buf.sampleRate,N=x.
 let KEY=null; // {root, mode, pcs}
 const SCALE={major:[0,2,4,5,7,9,11],minor:[0,2,3,5,7,8,10]};
 function setKeyFrom(notes,tune){
-  const k=notes.length>=2?findKey(notes,tune):{root:2,mode:'major'};
+  // another Sonne on the same Wi-Fi already has loops going: sing along in its key
+  const k=LINK.key&&LINK.held?LINK.key:notes.length>=2?findKey(notes,tune):{root:2,mode:'major'};
   KEY={...k,pcs:SCALE[k.mode].map(s=>(s+k.root)%12)}}
+/* ---------- linked sonnes ---------- */
+// Sonnes on the same Wi-Fi find each other through lil.audio (same home network = same room, no codes) and share
+// one thing only: the key (Ville, 7 Nov 2026). Tempo, loop length and everything else stay each Sonne's own.
+// The first Sonne to sing sets the key; any other Sonne that starts a loop while it plays sings in that key.
+// Without the room service (or offline) a Sonne simply plays alone.
+const LINK={id:(Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)).slice(0,16),key:null,held:0,peers:1,on:false,at:0,timer:0,busy:null};
+const soundingKey=()=>KEY&&LOOP?{root:(((KEY.root+SEMI-(LOOP.s0||0))%12)+12)%12,mode:KEY.mode}:null;
+function linkPing(){if(LINK.busy)return LINK.busy;clearTimeout(LINK.timer);
+  // while this Sonne has loops it offers its key (at its current speed); the room only takes it if no other Sonne holds one
+  const own=soundingKey();
+  LINK.busy=fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({app:'sonne',id:LINK.id,hold:!!own,claim:own})})
+    .then(r=>r.ok?r.json():{on:false}).catch(()=>({on:false})).then(j=>{
+      LINK.on=!!j.on;LINK.at=Date.now();LINK.key=j.on&&j.key&&SCALE[j.key.mode]?j.key:null;LINK.held=j.on?j.holders||0:0;LINK.peers=j.on?j.peers||1:1;
+      showNear();LINK.busy=null;if(!document.hidden)LINK.timer=setTimeout(linkPing,!LINK.on?60000:LINK.peers>1?4000:8000)});
+  return LINK.busy}
+// just before a first take sets the key: a fresh look at the room if another Sonne is around (at most half a second)
+function linkFresh(){if(!LINK.on||LINK.peers<2||Date.now()-LINK.at<1500)return Promise.resolve();
+  return Promise.race([linkPing(),new Promise(r=>setTimeout(r,500))])}
+function showNear(){const n=Math.min(6,LINK.peers-1),el=$('#near');if(!el)return;const t=n>0?'•'.repeat(n):'';if(el.textContent!==t)el.textContent=t;
+  el.title=n>0?(n===1?'another sonne':n+' other sonnes')+' on this Wi-Fi'+(LINK.key?', singing in '+NOTE[LINK.key.root]+' '+LINK.key.mode:''):''}
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)linkPing();else clearTimeout(LINK.timer)});
+if(location.protocol.startsWith('http'))setTimeout(linkPing,300);
 const snapM=m=>{let best=Math.round(m),bd=99;for(let k=Math.floor(m)-3;k<=Math.ceil(m)+3;k++)if(KEY.pcs.includes(((k%12)+12)%12)&&Math.abs(k-m)<bd){bd=Math.abs(k-m);best=k}return best};
 // the singer's own pitch centre (circular mean of the fractional semitones) tells which notes were meant
 function centreOf(notes){let sx=0,sy=0;for(const n of notes){const a=2*Math.PI*n.m;sx+=n.dur*Math.cos(a);sy+=n.dur*Math.sin(a)}return notes.length?Math.atan2(sy,sx)/(2*Math.PI):0}
@@ -343,7 +369,7 @@ function startPlay(phase=0){if(!LOOP)return;ensureAudio();if(playing)return;play
 function stopPlay(hard){if(!playing)return;playing=false;clearInterval(timer);const n=ac.currentTime;frozenT=n-(ac.outputLatency||0);vpos=frozenT-T0;park=((vpos%LOOP.L)+LOOP.L)%LOOP.L;
   for(const s of live.splice(0)){try{s.gn.gain.cancelScheduledValues(n);s.gn.gain.setTargetAtTime(0,n,hard?.008:.04);s.src.stop(n+.3)}catch(e){}}
   harmStop(n)}
-function clearAll(){stopPlay();layers=[];LOOP=null;KEY=null;CHORDS=null;$('.stage').classList.add('blank');
+function clearAll(){stopPlay();layers=[];LOOP=null;KEY=null;CHORDS=null;$('.stage').classList.add('blank');if(LINK.on)linkPing();
   setHint('Cleared. Hold the red dot and sing a new loop.')}
 
 /* ---------- harmony layer ---------- */
@@ -416,11 +442,14 @@ function useFirst(v){
   layers=[];const ly=newLayer(v,0,true);ly.off=0;layers.push(ly);pickChords(false);
   $('.stage').classList.remove('blank');applySpace();
   startPlay();
-  setHint('Looping '+L.toFixed(1)+' s in '+NOTE[KEY.root]+' '+KEY.mode+'. Sing again while it plays to add a layer. Tap the rings to stop, or hold and turn them to scratch.')}
+  setHint('Looping '+L.toFixed(1)+' s in '+NOTE[KEY.root]+' '+KEY.mode+(LINK.key&&LINK.held?', the same key as the other sonne':'')+'. Sing again while it plays to add a layer. Tap the rings to stop, or hold and turn them to scratch.')}
 function useOverdub(v,tStart,now){v.sh=hsh();v.cents=(LOOP.firstCents??centreOf(v.notes))+v.sh;prepTuning(v);
   const ly=newLayer(v,tStart,false,now);addLayer(ly);setHint('Added a layer. '+(layers.length>1?layers.length+' layers drifting.':''))}
+let firstWait=null; // a first take waiting (at most half a second) to hear the other Sonnes' key
 function takeIn(buf,tStart){const v=prepTake(buf);if(!v){setHint("I couldn't hear any singing there. Try a little louder.");return}
-  if(!LOOP||!layers.length&&!playing){useFirst(v);LOOP.firstCents=v.cents;return}
+  if(firstWait){firstWait.then(()=>placeTake(v,tStart));return}placeTake(v,tStart)}
+function placeTake(v,tStart){
+  if(!LOOP||!layers.length&&!playing){firstWait=linkFresh().then(()=>{firstWait=null;useFirst(v);LOOP.firstCents=v.cents;linkPing()});return}
   const was=playing;if(!playing)startPlay();
   useOverdub(v,tStart!=null?tStart+v.lead:ac.currentTime+.1,!was)}
 window.__dl={take:(buf,t)=>{ensureAudio();takeIn(buf,t)},state:()=>({L:LOOP&&LOOP.L,key:KEY&&NOTE[KEY.root]+' '+KEY.mode,layers:layers.length,chords:CHORDS&&CHORDS.list.map(c=>c.d),live:live.length,playing})};
