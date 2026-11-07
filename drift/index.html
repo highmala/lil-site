@@ -269,7 +269,7 @@ function initAudio(){
   const nb=ac.createBuffer(1,ac.sampleRate,ac.sampleRate),nd=nb.getChannelData(0);for(let i=0;i<nd.length;i++)nd[i]=Math.random()*2-1;NOISE=nb;
   window.__dlAC=ac;applySpace()}
 function setSession(t){try{if(navigator.audioSession&&navigator.audioSession.type!==t)navigator.audioSession.type=t}catch(e){}}
-function ensureAudio(){if(!rec&&!micBusy)setSession('playback');
+function ensureAudio(){if(!rec&&!micBusy&&!micKeep)setSession('playback');
   if(!ac)initAudio();if(ac.state!=='running')ac.resume().catch(()=>{})}
 document.addEventListener('pointerdown',ensureAudio,true);document.addEventListener('keydown',ensureAudio,true);
 
@@ -424,6 +424,13 @@ function takeIn(buf,tStart){const v=prepTake(buf);if(!v){setHint("I couldn't hea
 window.__dl={take:(buf,t)=>{ensureAudio();takeIn(buf,t)},state:()=>({L:LOOP&&LOOP.L,key:KEY&&NOTE[KEY.root]+' '+KEY.mode,layers:layers.length,chords:CHORDS&&CHORDS.list.map(c=>c.d),live:live.length,playing})};
 
 /* ---------- recorder (no click, no count-in: sing whenever) ---------- */
+// the mic stays open between takes while the loop plays: opening it (and switching the phone into recording mode)
+// is what made a short gap in the music when you start a new layer (Ville, 7 Nov 2026). It closes after a while of
+// silence with nothing playing, or when the page is hidden.
+let micKeep=null,micTimer=0;
+function micRelease(){clearTimeout(micTimer);if(!micKeep||rec)return;micKeep.getTracks().forEach(t=>t.stop());micKeep=null;setSession('playback')}
+function micLater(){clearTimeout(micTimer);micTimer=setTimeout(()=>{if(playing||rec)micLater();else micRelease()},60000)}
+document.addEventListener('visibilitychange',()=>{if(document.hidden&&!rec)micRelease()});
 let rec=null,micBusy=false,sbHold=false; // sbHold: a finger is on the dot, so only letting go ends the take
 async function startSing(){
   if(rec){stopSing(false);return}
@@ -431,12 +438,13 @@ async function startSing(){
   const over=playing&&!!LOOP;
   let stream;
   micBusy=true;setSession('play-and-record');
+  clearTimeout(micTimer);if(micKeep&&micKeep.getTracks().some(t=>t.readyState==='live'))stream=micKeep;else{micKeep=null;
   try{if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)throw 0;
     // no echo cancellation, even over a playing loop: on phones it switches the whole device into call mode and the
     // loop's volume jumps (Ville, 7 Nov 2026); the start gate's noise floor already includes the loop's bleed
     stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}})}
-  catch(e){micBusy=false;setSession('playback');setHint(e&&e.name==='NotAllowedError'?"The microphone is blocked. Allow the microphone for this site in your browser settings, then try again.":"The microphone isn't reachable on this page.");return}
-  micBusy=false;if(ac.state!=='running')ac.resume().catch(()=>{});
+  catch(e){micBusy=false;setSession('playback');setHint(e&&e.name==='NotAllowedError'?"The microphone is blocked. Allow the microphone for this site in your browser settings, then try again.":"The microphone isn't reachable on this page.");return}}
+  micBusy=false;micKeep=stream;if(ac.state!=='running')ac.resume().catch(()=>{});
   const src=ac.createMediaStreamSource(stream),proc=ac.createScriptProcessor(4096,1,1),sink=ac.createGain();sink.gain.value=0;src.connect(proc);proc.connect(sink);sink.connect(ac.destination);
   rec={stream,src,proc,sink,chunks:[],t0:ac.currentTime,first:null,started:false,floor:0,peak:0,quiet:0,over,hist:[]};
   proc.onaudioprocess=e=>{const R=rec;if(!R||R.proc!==proc)return;const d=e.inputBuffer.getChannelData(0);
@@ -456,7 +464,7 @@ async function startSing(){
   mainUI();setHint(over?'Listening. Sing a new layer over the loop.':'Listening. Sing your tune, then let go.');
 }
 function stopSing(cancel){if(!rec)return;const R=rec;rec=null;R.proc.onaudioprocess=null;try{R.src.disconnect();R.proc.disconnect();R.sink.disconnect()}catch(e){}
-  R.stream.getTracks().forEach(t=>t.stop());setSession('playback');mainUI();
+  micKeep=R.stream;micLater();mainUI();
   if(cancel||!R.started){setHint(R.started?'Stopped.':"I didn't hear any singing. Hold the dot and sing a little louder.");return}
   const n=R.chunks.reduce((a,c)=>a+c.length,0),buf=ac.createBuffer(1,n,ac.sampleRate),d=buf.getChannelData(0);let o=0;for(const c of R.chunks){d.set(c,o);o+=c.length}
   takeIn(buf,R.over?R.first:null)}
