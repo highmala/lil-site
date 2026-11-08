@@ -331,7 +331,9 @@ let LOOP=null,layers=[],playing=false,T0=0,timer=null,hNext=0,hN=0,frozenT=0;
 let SEMI=0;const SPD=()=>Math.pow(2,SEMI/12),rateOf=ly=>SPD()/ly.k,hsh=()=>LOOP?SEMI-(LOOP.s0||0):0;
 const LANES=4,LMUL=[0,1,-1,2],LPAN=[-.12,.72,-.72,.38],LCOL=['#FFD60A','#4ECDC4','#FF6B6B','#A9A7FF'];
 const driftAmt=()=>.05*Math.pow(SL('drift'),1.4);              // lane length difference, as a share of the loop
-const laneLen=k=>LOOP.L*(1+LMUL[k]*driftAmt());
+// a layer can be longer than the first loop (Ville, 8 Nov 2026): it lasts a whole number of loop turns (ly.n) and repeats on that
+const cycOf=ly=>LOOP.L*(ly&&ly.n||1);
+const laneLen=(k,ly)=>cycOf(ly)*(1+LMUL[k]*driftAmt());
 // memory slider flipped (Ville, 7 Nov 2026): forever on the left, fast on the right, so the slider value is how fast loops fade
 const MEM=()=>1-SL('memory');
 const memPass=()=>1-.42*Math.pow(1-MEM(),1.5);           // level kept per pass: .58 (fades fast) to 1 (forever)
@@ -340,8 +342,9 @@ let renderTimer=0;
 function rerender(){for(const ly of layers){const r=renderTuned(ly.v,ly.len,SL('tune'));ly.r=r}}
 // lanes: n counts passes since play started (copy k joins on pass k), age counts how often it has sounded (for fading)
 function newLayer(v,tStart,first,now){
-  const len=first?LOOP.L:Math.min(LOOP.L,v.end+.15);const ly={v,len,k:SPD(),tStart,off:((tStart-T0)%LOOP.L+LOOP.L)%LOOP.L,lvl:1,
-    lanes:[...Array(LANES)].map((_,k)=>({next:first||now?tStart:tStart+laneLen(k),n:0,join:k,age:0}))};
+  const n=first?1:Math.max(1,Math.ceil((v.end+.05)/LOOP.L-.12)),C=LOOP.L*n;
+  const len=first?LOOP.L:Math.min(C,v.end+.15);const ly={v,len,n,k:SPD(),tStart,off:((tStart-T0)%C+C)%C,lvl:1};
+  ly.lanes=[...Array(LANES)].map((_,k)=>({next:first||now?tStart:tStart+laneLen(k,ly),n:0,join:k,age:0}));
   ly.r=renderTuned(v,len,SL('tune'));return ly}
 function addLayer(ly){
   // a loud take washes older memory out faster; a soft one just layers in
@@ -365,7 +368,7 @@ function trigger(ly,k,t,off=0){const L=ly.lanes[k],age=L.age,mem=memPass(),drift
   return g}
 function tick(){if(!playing||!LOOP)return;const now=ac.currentTime,ahead=now+(MOBILE?.45:.25);
   for(const ly of layers)for(let k=0;k<LANES;k++){const L=ly.lanes[k];
-    while(L.next<ahead){if(L.next>now-.05&&L.n>=L.join)L.last=trigger(ly,k,L.next);else if(L.n<L.join)L.last=0;L.lastT=L.next;L.n++;L.next+=laneLen(k)}}
+    while(L.next<ahead){if(L.next>now-.05&&L.n>=L.join)L.last=trigger(ly,k,L.next);else if(L.n<L.join)L.last=0;L.lastT=L.next;L.n++;L.next+=laneLen(k,ly)}}
   for(const ly of layers)ly.alive=ly.lanes.some(L=>L.n<=L.join||L.last>.015);
   layers=layers.filter(ly=>ly.alive||ly.lanes.some(L=>L.n<L.join+1));
   // harmony: steady with the first loop, fades away when nothing is left to sing
@@ -375,7 +378,7 @@ function tick(){if(!playing||!LOOP)return;const now=ac.currentTime,ahead=now+(MO
 function startPlay(phase=0){if(!LOOP)return;ensureAudio();if(playing)return;playing=true;
   const t=ac.currentTime+.06;T0=t-phase;hN=Math.ceil(phase/LOOP.L-1e-6);hNext=T0+hN*LOOP.L;
   for(const ly of layers)ly.lanes.forEach((L,k)=>{L.next=T0+ly.off;L.join=k;L.n=0;L.last=undefined;L.lastT=undefined;
-    while(L.next<t-.01){const into=t-L.next;if(k===0&&into<ly.r.buf.duration/rateOf(ly)-.05){L.last=trigger(ly,0,t,into);L.lastT=L.next}L.next+=LOOP.L}});
+    while(L.next<t-.01){const into=t-L.next;if(k===0&&into<ly.r.buf.duration/rateOf(ly)-.05){L.last=trigger(ly,0,t,into);L.lastT=L.next}L.next+=cycOf(ly)}});
   harmG.gain.cancelScheduledValues(t);harmG.gain.setValueAtTime(phase>.05?.0001:0,t);if(phase>.05){harmFrom(t);harmG.gain.setTargetAtTime(.9,t,.15)}
   clearInterval(timer);timer=setInterval(tick,25);tick()}
 // stop: the loops and chords let go quickly, the echoes and hall ring out
@@ -503,8 +506,8 @@ async function startSing(){
     // finger on the phone can neither start the take nor make the singing after it count as quiet (Ville, 7 Nov 2026)
     if(!R.started){if(lv>on&&R.prev>on){R.started=true;R.peak=Math.min(lv,R.prev)}else if(el>8)stopSing(true);R.prev=lv;return}
     R.peak=Math.max(R.peak,Math.min(lv,R.prev));R.prev=lv;if(lv<Math.max(on*.7,R.peak*.08))R.quiet+=bt;else R.quiet=0;
-    // a layer is never longer than the loop
-    if(R.quiet>1.1&&!sbHold||el>(R.over?LOOP.L+.3:12))stopSing(false)};
+    // a new layer may run longer than the loop: it ends when the singing stops, like the first take
+    if(R.quiet>1.1&&!sbHold||el>(R.over?Math.max(12,LOOP.L+.3):12))stopSing(false)};
   mainUI();setHint(over?'Listening. Sing a new layer over the loop.':'Listening. Sing your tune, then let go.');
 }
 function stopSing(cancel){if(!rec)return;const R=rec;rec=null;R.proc.onaudioprocess=null;try{R.src.disconnect();R.proc.disconnect();R.sink.disconnect()}catch(e){}
@@ -610,7 +613,7 @@ function draw(){requestAnimationFrame(draw);const W=cv.width,H=cv.height;if(!W)r
       cx.globalAlpha=.25+.75*i/n;const r=laneR(0)-band*.45;cx.beginPath();cx.moveTo(c+Math.cos(a)*(r-l/2),cy+Math.sin(a)*(r-l/2));cx.lineTo(c+Math.cos(a)*(r+l/2),cy+Math.sin(a)*(r+l/2));cx.lineWidth=Math.max(1.5,R0*.012);cx.strokeStyle='#ff6b6b';cx.stroke()}cx.globalAlpha=1}
   if(!LOOP||!ac)return;const live_=playing&&!grab;if(!live_)vT=null;const now=live_?heardNow():T0+vpos;playA+=((playing?1:.6)-playA)*ease(.25);
   for(const ly of layers){if(!ly.r)continue;const env=ly.r.env,E=env.length,dur=ly.r.buf.duration/rateOf(ly);
-    for(let k=0;k<LANES;k++){const L=ly.lanes[k],Lk=laneLen(k),r=laneR(k)-band*.45;
+    for(let k=0;k<LANES;k++){const L=ly.lanes[k],Lk=laneLen(k,ly),r=laneR(k)-band*.45;
       // the bars' height follows how much of the loop is left: as memory fades it eases slowly down to a thin line
       const ll=k?laneLvl(k):1,tgt=ll<.02?0:L.n>L.join||(L.n===L.join&&L.last!=null)?clamp(Math.sqrt((L.last??ll)/ll)):.12;
       L.vis=L.vis==null?tgt:L.vis+(tgt-L.vis)*ease(.7);const vis=L.vis;
