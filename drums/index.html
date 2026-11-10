@@ -41,6 +41,11 @@ button,input{font-family:inherit;font-weight:bold;color:inherit}
 .link{background:none;border:0;padding:4px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:4px;font-size:.95rem;opacity:.75}
 .link:hover{opacity:1}
 .hint{margin:0;font-size:.8rem;opacity:.5;text-align:center;max-width:52ch;min-height:2.3em}
+.link.solo{display:inline-flex;align-items:center;gap:7px;font-size:.75rem;opacity:.45;padding:2px 6px;margin-top:-4px;text-decoration:none}
+.solo[hidden]{display:none}
+.solo i{position:relative;width:22px;height:12px;border-radius:6px;border:1.5px solid currentColor;box-sizing:border-box}
+.solo i::after{content:'';position:absolute;top:1.5px;left:2px;width:6px;height:6px;border-radius:50%;background:currentColor;transition:left .2s}
+.solo.on{opacity:.85}.solo.on i::after{left:11px}
 .vols{display:grid;grid-template-columns:1fr 1fr;gap:22px 34px;max-width:640px;width:100%;margin:0 auto}
 .h{display:flex;flex-direction:column;gap:6px}
 .h .lbl{font-size:.66rem;letter-spacing:.16em;text-transform:uppercase;opacity:.55;text-align:center}
@@ -106,6 +111,7 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
   <div class="under">
     <div class="small"><button class="link" id="tapBtn">tap a rhythm</button><button class="link" id="makeTune">make a rhythm</button><button class="link" id="beatBtn">add music</button></div>
     <p class="hint" id="voiceHint">Hold the red dot and drum a rhythm into the mic: beatbox, clap or knock. Or tap one by hand, or make one. Tap the ring to play, hold it to stop, move it to scratch.</p>
+    <button class="link solo" id="soloBtn" hidden aria-pressed="false" aria-label="Solo: don't follow the sonnes on this Wi-Fi">solo<i></i></button>
   </div>
   <div class="vols">
     <div class="h"><span class="lbl">rhythm volume</span><input type="range" id="vVol" min="0" max="1" step="0.001" value="0.85" aria-label="Rhythm volume"></div>
@@ -1041,13 +1047,14 @@ function scheduleVoice(gs,t,sd){const sec=Math.floor(gs/SEC_STEPS),ls=gs%SEC_STE
     else if(qa<1&&h.d<0&&((isCall&&h.s===ls+1)||(nextCall&&ls===SEC_STEPS-1&&h.s===0)))w=t+sdA+h.d*(1-qa)/k; // a hit a little ahead of its 16th
     if(w!=null)playSlice(h,Math.max(ac.currentTime,w),c,gs,sd)}}
 function applyPerc(p,res,meta){
-  const r=mkRng((Date.now()*31)&0xffffffff),root=Math.floor(r()*12);TUNE=0;setKey(root,into(root,60));setForm(res.BARS);
+  const r=mkRng((Date.now()*31)&0xffffffff),root=linked()?LINK.key.root:Math.floor(r()*12);TUNE=0;setKey(root,into(root,60));setForm(res.BARS);
   S.party=clamp(.8-res.en*.7,.1,.85);S.tempo=tempoFor(res.bpm);S.bpmOv=res.bpm;S.energy=clamp((.85-S.party)/.75);S.mood=moodFor(S.energy);
   voice={buf:p.buf,slices:p.slices,hits:res.hits,bm:res.bm,sd0:15/res.bpm,bpm0:res.bpm,e0:S.energy,off:res.down,pre:0,end:res.end,id:meta.id,demo:meta.demo};
   S.call=res.pat;S.melody={call:pseudoMelody(res.pat)};
+  if(linked())linkApply(true);
   S.beat=genBeat(r);rollAll(r,true,true);pickProgs(r,false);writeAnswers(r);writeDrumAnswers(r);fitGroove();
   const parts=[0,1,2].filter(i=>res.cnt[i]).map(i=>res.cnt[i]+' '+CLSN[i][res.cnt[i]>1?1:0]);
-  heard=Math.round(res.bpm)+' BPM, '+res.BARS+' bar'+(res.BARS>1?'s':'')+': '+(parts.length>1?parts.slice(0,-1).join(', ')+' and '+parts[parts.length-1]:parts[0]);
+  heard=Math.round(bpmRaw())+' BPM'+(linked()?' with the sonne':'')+', '+res.BARS+' bar'+(res.BARS>1?'s':'')+': '+(parts.length>1?parts.slice(0,-1).join(', ')+' and '+parts[parts.length-1]:parts[0]);
   syncInputs();updateLead();updateMix();updateVoiceSpace();readouts();currentSlot=-1;renderPatches()}
 const VSTORE={};
 function useClip(buf,label,autoplay,meta={}){const t0=performance.now();let p=null;try{p=analyzePerc(buf)}catch(e){console.error(e)}
@@ -1220,8 +1227,39 @@ function applyStyle(){S.beatTex=1-S.style;S.leadTex=leadTexFor(S.style);updateLe
 function styleFx(){if(!ac||!leadSend)return;const x=S.beatTex,n=ac.currentTime;
   leadSend.rev.gain.setTargetAtTime(L4([.16,.42,.34,.26],x),n,.1);leadSend.hall.gain.setTargetAtTime(L4([.12,.18,.22,.6],x),n,.1);leadSend.dly.gain.setTargetAtTime(L4([.75,.28,.16,.3],x),n,.1)}
 // energy: calm is sparser, softer and up to ~45% slower than the take; party is busier, brighter and up to ~35% faster
-function applyEnergy(){const e=S.energy,e0=voice&&voice.e0!=null?voice.e0:.5,b0=voice&&voice.bpm0||100;S.party=clamp(.85-.75*e,.1,.85);S.mood=moodFor(e);
-  const tf=e<e0?.55+.45*e/Math.max(.05,e0):1+.35*(e-e0)/Math.max(.05,1-e0);S.bpmOv=clamp(b0*tf,40,200);S.tempo=Math.min(.55,tempoFor(clamp(S.bpmOv,40,150)));updateMix();updateVoiceSpace();if(ac&&lead)updateLead()}
+function applyEnergy(){const e=S.energy,e0=voice&&voice.e0!=null?voice.e0:.5,lt=linkTempo(voice&&voice.bpm0||100),b0=lt||voice&&voice.bpm0||100;S.party=clamp(.85-.75*e,.1,.85);S.mood=linked()?linkMood():moodFor(e);
+  // with a Sonne's pulse to follow, energy changes how busy the jam is but not its tempo
+  const tf=lt?1:e<e0?.55+.45*e/Math.max(.05,e0):1+.35*(e-e0)/Math.max(.05,1-e0);S.bpmOv=clamp(b0*tf,40,200);S.tempo=Math.min(.55,tempoFor(clamp(S.bpmOv,40,150)));updateMix();updateVoiceSpace();if(ac&&lead)updateLead()}
+/* ---------- playing along with Sonne ---------- */
+// Ville, 10 Nov 2026: Drums senses the Sonnes on the same Wi-Fi (the same lil.audio room service, see /api/room) and
+// follows them: it plays in their key, and its tempo locks to the Sonne loop's pulse at the half, two-thirds, same, 1.5x
+// or double speed, whichever is nearest to the rhythm the kid drummed. Drums only listens; it never sets the key for the Sonnes. Beats aren't lined up
+// in time, only the tempo. A tiny "solo" switch down low stops it following (remembered on this device).
+const LINK={solo:(()=>{try{return localStorage.getItem('drums-solo')==='1'}catch(e){return false}})(),id:(Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)).slice(0,16),key:null,peers:1,on:false,timer:0,busy:null};
+const linked=()=>!!(LINK.key&&!LINK.solo);
+const linkMood=()=>LINK.key.mode==='major'?0:.8;
+function linkTempo(kid){if(!linked()||!(LINK.key.bpm>0))return 0;let best=0,bd=1e9;
+  for(const f of [.5,2/3,1,1.5,2]){const b=LINK.key.bpm*f,d=Math.abs(Math.log(b/kid));if(b>=45&&b<=200&&d<bd){bd=d;best=b}}return best}
+// key and tempo from the room; while playing it moves over at once (the next notes are in the new key)
+function linkApply(quiet){if(!linked())return;const k=LINK.key;
+  if(ROOT_PC!==k.root)setKey(k.root,into(k.root,60));applyEnergy();
+  if(!quiet&&voice){readouts();setHint('Playing along with the sonne: '+NOTE[k.root]+' '+k.mode+(k.bpm?', '+Math.round(bpmRaw())+' BPM':'')+'.')}}
+function linkPing(){if(LINK.busy)return LINK.busy;clearTimeout(LINK.timer);
+  LINK.busy=fetch('/api/room',{method:'POST',headers:{'Content-Type':'application/json'},cache:'no-store',body:JSON.stringify({app:'sonne',id:LINK.id,hold:false})})
+    .then(r=>r.ok?r.json():{on:false}).catch(()=>({on:false})).then(j=>{
+      const was=LINK.key&&JSON.stringify(LINK.key);
+      LINK.on=!!j.on;LINK.key=j.on&&j.holders>0&&j.key&&(j.key.mode==='major'||j.key.mode==='minor')?j.key:null;LINK.peers=j.on?j.peers||1:1;
+      if(LINK.key&&JSON.stringify(LINK.key)!==was)linkApply(false);
+      showLink();LINK.busy=null;if(!document.hidden)LINK.timer=setTimeout(linkPing,!LINK.on?60000:LINK.peers>1?4000:8000)});
+  return LINK.busy}
+function showLink(){const sb=$('#soloBtn');if(!sb)return;const n=LINK.peers-1;
+  sb.hidden=!(n>0||LINK.solo);sb.classList.toggle('on',LINK.solo);sb.setAttribute('aria-pressed',LINK.solo?'true':'false');
+  sb.title=LINK.solo?'Solo: drums keep their own key and tempo.':LINK.key?'Playing along with the sonne in '+NOTE[LINK.key.root]+' '+LINK.key.mode+'. Tap for solo.':'A sonne is on this Wi-Fi. Tap for solo.'}
+$('#soloBtn').addEventListener('click',()=>{LINK.solo=!LINK.solo;try{localStorage.setItem('drums-solo',LINK.solo?'1':'0')}catch(e){}showLink();
+  if(LINK.solo){applyEnergy();setHint('Solo: the drums keep their own key and tempo.')}else{linkPing().then(()=>{if(!linked())setHint('Together: the drums follow a sonne when one is playing.')})}});
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)linkPing();else clearTimeout(LINK.timer)});
+if(location.protocol.startsWith('http'))setTimeout(linkPing,300);
+window.__drums={state:()=>({key:NOTE[ROOT_PC]+' '+scaleObj().n,bpm:bpm(),kid:voice&&voice.bpm0,link:LINK.key,solo:LINK.solo,peers:LINK.peers}),energy:e=>{S.energy=e;applyEnergy()}};
 // mix: one balance between the voice and the band
 function applyMix(){const v=+$('#vVol').value,m=+$('#mVol').value;S.voiceVol=clamp(v);S.leadVol=clamp(m);S.beatVol=clamp(m*.9);applyVolumes()}
 $('#vVol').addEventListener('input',applyMix);$('#mVol').addEventListener('input',applyMix);
