@@ -215,11 +215,15 @@ function setKeyFrom(notes,tune){
   KEY={...k,pcs:SCALE[k.mode].map(s=>(s+k.root)%12)}}
 /* ---------- linked sonnes ---------- */
 // Sonnes on the same Wi-Fi find each other through lil.audio (same home network = same room, no codes) and share
-// one thing only: the key (Ville, 7 Nov 2026). Tempo, loop length and everything else stay each Sonne's own.
+// one thing only: the key (Ville, 7 Nov 2026). Tempo, loop length and everything else stay each Sonne's own. A Song Box Drums
+// on the same Wi-Fi listens too: it plays in the key and at a tempo related to the loop's pulse (10 Nov 2026).
 // The first Sonne to sing sets the key; any other Sonne that starts a loop while it plays sings in that key.
 // Without the room service (or offline) a Sonne simply plays alone.
 const LINK={solo:(()=>{try{return localStorage.getItem('sonne-solo')==='1'}catch(e){return false}})(),id:(Math.random().toString(36).slice(2)+Math.random().toString(36).slice(2)).slice(0,16),key:null,held:0,peers:1,on:false,at:0,timer:0,busy:null};
-const soundingKey=()=>KEY&&LOOP?{root:(((KEY.root+SEMI-(LOOP.s0||0))%12)+12)%12,mode:KEY.mode}:null;
+// the key as it sounds now (the speed slider transposes), plus the loop's pulse for Song Box Drums to play along to
+// (Ville, 10 Nov 2026): the note spacing, or the loop cut into 70-140 bpm beats
+const loopBpm=()=>{if(!LOOP)return 0;let b=LOOP.beat>.15?60/LOOP.beat:8*60/LOOP.L;while(b<70)b*=2;while(b>=140)b/=2;return b};
+const soundingKey=()=>KEY&&LOOP?{root:(((KEY.root+SEMI-(LOOP.s0||0))%12)+12)%12,mode:KEY.mode,bpm:loopBpm()}:null;
 function linkPing(){if(LINK.busy)return LINK.busy;clearTimeout(LINK.timer);
   // while this Sonne has loops it offers its key (at its current speed); the room only takes it if no other Sonne holds one
   const own=LINK.solo?null:soundingKey();
@@ -468,7 +472,7 @@ function placeTake(v,tStart){
   if(!LOOP||!layers.length&&!playing){firstWait=linkFresh().then(()=>{firstWait=null;useFirst(v);LOOP.firstCents=v.cents;linkPing()});return}
   const was=playing;if(!playing)startPlay();
   useOverdub(v,tStart!=null?tStart+v.lead:ac.currentTime+.1,!was)}
-window.__dl={take:(buf,t)=>{ensureAudio();takeIn(buf,t)},state:()=>({L:LOOP&&LOOP.L,key:KEY&&NOTE[KEY.root]+' '+KEY.mode,layers:layers.length,chords:CHORDS&&CHORDS.list.map(c=>c.d),live:live.length,playing})};
+window.__dl={take:(buf,t)=>{ensureAudio();takeIn(buf,t)},state:()=>({L:LOOP&&LOOP.L,key:KEY&&NOTE[KEY.root]+' '+KEY.mode,layers:layers.length,chords:CHORDS&&CHORDS.list.map(c=>c.d),live:live.length,playing,bpm:Math.round(loopBpm())})};
 
 /* ---------- recorder (no click, no count-in: sing whenever) ---------- */
 // the mic stays open between takes while the loop plays: opening it (and switching the phone into recording mode)

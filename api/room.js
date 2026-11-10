@@ -1,11 +1,11 @@
 // Room service: Sonnes on the same Wi-Fi share one musical key, with no codes or setup.
 // Devices behind the same home router reach this function from the same public IPv4 address (or the same IPv6 /64),
-// so that address, hashed, is the room. Only the key is shared, never audio, tempo or loop length.
+// so that address, hashed, is the room. Only the key is shared (plus the loop's pulse, for Song Box Drums), never audio.
 //
 // POST /api/room  {app:'sonne', id:'<random per page load>', hold:bool, claim:{root:0-11, mode:'major'|'minor'}?}
 //   hold  = this page has loops playing in the key, so it keeps the room's key alive
 //   claim = this page just set its key from a first take; it becomes the room's key if no other page is holding one
-//   -> {on:true, key:{root,mode}|null (the key other pages are holding, null if none), holders, peers}
+//   -> {on:true, key:{root,mode,bpm?}|null (the key other pages are holding, null if none), holders, peers}
 // When every page has cleared, the next first take anywhere sets a fresh key.
 // Storage: Upstash Redis over REST (Vercel Storage -> Upstash for Redis). Without it the page just plays alone ({on:false}).
 const crypto = require('crypto');
@@ -58,13 +58,15 @@ module.exports = async (req, res) => {
   const id = /^[a-z0-9]{6,24}$/i.test(b.id) ? b.id : null;
   if (!id) { res.status(400).json({on: false}); return; }
   const room = roomOf(req, app), now = Date.now();
-  const claim = validKey(b.claim) ? JSON.stringify({root: b.claim.root, mode: b.claim.mode}) : '';
+  // a Sonne's key may carry its loop's pulse (bpm), so a Song Box Drums on the same Wi-Fi can play at a related tempo
+  const bpmOf = k => (typeof k.bpm === 'number' && k.bpm >= 30 && k.bpm <= 300 ? {bpm: Math.round(k.bpm * 10) / 10} : {});
+  const claim = validKey(b.claim) ? JSON.stringify({root: b.claim.root, mode: b.claim.mode, ...bpmOf(b.claim)}) : '';
   try {
     const out = await redis([['EVAL', SCRIPT, '3', room + ':peers', room + ':holders', room + ':key', String(now), id, String(WINDOW), b.hold ? '1' : '0', claim]]);
     const [raw, holders, peers] = out[0] || [];
     let key = null;
     try { key = raw ? JSON.parse(raw) : null; } catch (e) { key = null; }
-    res.status(200).json({on: true, key: validKey(key) ? key : null, holders: holders || 0, peers: peers || 1});
+    res.status(200).json({on: true, key: validKey(key) ? {root: key.root, mode: key.mode, ...bpmOf(key)} : null, holders: holders || 0, peers: peers || 1});
   } catch (e) {
     res.status(200).json({on: false});
   }
