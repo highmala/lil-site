@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>shaker · lil.audio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Comic+Neue:wght@700&display=swap">
+<style>
+/* Shaker: a screen full of balls that rattle against the edges. Tilt and shake the phone, or push them with a finger.
+   Two sliders: how many balls, and what they are made of (heavy stone ... seeds ... marble ... plastic ... bouncy rubber).
+   Physics and sound follow the same material. lil.audio look, same family as Sonne. */
+:root{--bg:hsl(200,40%,22%);--ink:255 255 255;--f:"ComicSans","Comic Sans MS","Comic Neue",cursive;color-scheme:dark}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:rgb(var(--ink));overflow:hidden;overscroll-behavior:none}
+body{font-family:var(--f);font-weight:bold;font-size:15px;line-height:1.4;-webkit-font-smoothing:antialiased;
+  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent}
+button,input{font-family:inherit;font-weight:bold;color:inherit}
+#box{position:fixed;inset:0;width:100%;height:100%;display:block;touch-action:none;cursor:grab}
+#box:active{cursor:grabbing}
+.ui{position:fixed;inset:0;pointer-events:none;display:flex;flex-direction:column;align-items:center;
+  padding:16px max(16px,env(safe-area-inset-right,0px)) max(16px,env(safe-area-inset-bottom,0px)) max(16px,env(safe-area-inset-left,0px))}
+.logo{margin:0;font-size:1.5rem;line-height:1;text-transform:lowercase;opacity:.55;text-align:center}
+.ctl{position:absolute;inset:0;display:flex;justify-content:space-between;align-items:center;
+  padding:0 max(22px,env(safe-area-inset-right,0px)) 0 max(22px,env(safe-area-inset-left,0px))}
+.v{display:flex;flex-direction:column;align-items:center;gap:6px;width:46px;pointer-events:auto}
+.v .lbl{font-size:.62rem;letter-spacing:.16em;text-transform:uppercase;opacity:.55;white-space:nowrap}
+.v .e{font-size:.68rem;opacity:.45;text-transform:lowercase;white-space:nowrap;line-height:1.2;text-align:center}
+.v input{writing-mode:vertical-lr;direction:rtl;width:32px;height:clamp(150px,38vh,320px)}
+.foot{margin-top:auto;display:flex;flex-direction:column;align-items:center;gap:4px}
+.hint{margin:0;font-size:.8rem;opacity:.5;text-align:center;max-width:44ch;transition:opacity 1.5s}
+.hint.gone{opacity:0}
+.link{pointer-events:auto;background:none;border:0;padding:4px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:4px;font-size:.95rem;opacity:.75}
+.link:hover{opacity:1}
+input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;margin:0;cursor:pointer;touch-action:none}
+input[type=range]::-webkit-slider-runnable-track{border-radius:6px;background:rgba(127,127,127,.35)}
+.v input::-webkit-slider-runnable-track{width:12px}
+input[type=range]::-moz-range-track{border-radius:6px;background:rgba(127,127,127,.35);height:12px;width:12px}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:32px;height:32px;border-radius:50%;background:currentColor;border:0}
+.v input::-webkit-slider-thumb{margin-left:-10px}
+input[type=range]::-moz-range-thumb{width:32px;height:32px;border-radius:50%;background:currentColor;border:0}
+button:focus-visible,input:focus-visible{outline:2px solid currentColor;outline-offset:4px}
+[hidden]{display:none!important}
+/* phones: both sliders lie flat side by side under the name, so the edges stay free for the balls */
+@media (max-width:640px){
+  .ui{padding-top:10px}
+  .ctl{position:static;display:grid;grid-template-columns:1fr 1fr;gap:18px;width:100%;margin-top:8px;padding:0}
+  .v{width:100%;display:grid;grid-template-columns:1fr auto 1fr;align-items:end;gap:0 8px}
+  .v .lbl{grid-column:2;grid-row:1;text-align:center;font-size:.6rem;letter-spacing:.12em}
+  .v .e{font-size:.62rem;grid-row:1;display:block}
+  .v .lbl+.e{grid-column:3;text-align:right}.v .e:last-child{grid-column:1;text-align:left}
+  .v input{grid-column:1/-1;grid-row:2;writing-mode:horizontal-tb;direction:ltr;width:100%;height:32px;min-width:0}
+  .v input::-webkit-slider-runnable-track{width:auto;height:12px}.v input::-webkit-slider-thumb{margin-left:0;margin-top:-10px}}
+@media (prefers-reduced-motion:reduce){*{transition:none!important;animation:none!important}}
+</style>
+<!-- lil.audio password gate (same password and look as lil.audio/play) -->
+<style>
+@font-face{font-family:ComicSans;src:url("/fonts/comic-sans-bold.woff2") format("woff2");font-weight:bold;font-display:swap}
+#lilgate{position:fixed;inset:0;z-index:2147483000;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:20px;background:#1a1a2e;font-family:ComicSans,"Comic Sans MS",cursive;font-weight:bold}
+#lilgate .logo{font-size:60px;color:#fff}
+#lilgate input{font-family:inherit;font-weight:bold;font-size:20px;padding:12px 24px;border:3px solid rgba(255,255,255,.3);border-radius:50px;text-align:center;outline:none;background:transparent;color:#fff;letter-spacing:.1em;max-width:80vw}
+#lilgate input::placeholder{color:rgba(255,255,255,.2)}
+#lilgate .hint{font-size:14px;opacity:.2;color:#fff}
+#lilgate.wrong input{border-color:#ff3b30;animation:lilshake .4s ease}
+@keyframes lilshake{0%,100%{transform:translateX(0)}25%{transform:translateX(-8px)}75%{transform:translateX(8px)}}
+html.lil-ok #lilgate{display:none}
+</style>
+<script>try{if(sessionStorage.getItem('lil-ok')==='1')document.documentElement.classList.add('lil-ok')}catch(e){}</script>
+
+</head>
+<body>
+<div id="lilgate"><div class="logo">lil</div><input id="lilpw" type="password" placeholder="•••••••" autocomplete="current-password" autofocus><div class="hint">shaker</div></div>
+<script>(function(){var PASS='bambient',g=document.getElementById('lilgate'),i=document.getElementById('lilpw');
+function tryPw(){if(i.value===PASS){document.documentElement.classList.add('lil-ok');try{sessionStorage.setItem('lil-ok','1')}catch(e){}i.blur()}
+else if(i.value){g.classList.add('wrong');i.value='';setTimeout(function(){g.classList.remove('wrong')},400)}}
+i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEventListener('change',tryPw);})();</script>
+
+
+<canvas id="box" aria-label="A box of balls. Tilt or shake the phone, or push the balls with your finger."></canvas>
+<div class="ui">
+  <h1 class="logo">shaker</h1>
+  <div class="ctl">
+    <div class="v"><span class="lbl">balls</span><span class="e">lots</span><input type="range" id="count" min="0" max="1" step="0.001" value="0.42" aria-label="Balls: few (left or bottom) to lots (right or top)"><span class="e">few</span></div>
+    <div class="v"><span class="lbl">type</span><span class="e">bouncy</span><input type="range" id="type" min="0" max="1" step="0.001" value="0.25" aria-label="Type: heavy (left or bottom) to bouncy (right or top)"><span class="e">heavy</span></div>
+  </div>
+  <div class="foot">
+    <p class="hint" id="hint" aria-live="polite">tap to start</p>
+    <button class="link" id="shakeBtn" hidden>shake</button>
+  </div>
+</div>
+
+<script>
+(()=>{
+const $=s=>document.querySelector(s);
+const clamp=(v,a=0,b=1)=>Math.min(b,Math.max(a,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const MOBILE=matchMedia('(pointer:coarse)').matches;
+const NEEDS_PERM=typeof DeviceMotionEvent!=='undefined'&&typeof DeviceMotionEvent.requestPermission==='function';
+const cv=$('#box'),cx=cv.getContext('2d');
+const hintEl=$('#hint'),shakeBtn=$('#shakeBtn');
+const setHint=t=>{hintEl.textContent=t;hintEl.classList.remove('gone')};
+
+/* ---------- size ---------- */
+let W=1,H=1,dpr=1;
+// pixels per metre: the screen is treated as a real box of its real size, so gravity and shakes feel physical
+const PXM=MOBILE?5200:3000;
+function resize(){
+  const r=cv.getBoundingClientRect();W=Math.max(1,r.width);H=Math.max(1,r.height);
+  dpr=Math.min(window.devicePixelRatio||1,2);
+  cv.width=Math.round(W*dpr);cv.height=Math.round(H*dpr);cx.setTransform(dpr,0,0,dpr,0,0);
+  sprites.clear();
+  for(const b of balls){b.x=clamp(b.x,b.r,W-b.r);b.y=clamp(b.y,b.r,H-b.r)}
+}
+
+/* ---------- materials: heavy stone, seeds, glass marble, plastic bead, bouncy rubber ----------
+   e: bounce, rho: weight, mu: rolling friction when the phone lies flat, wf: grip on the walls,
+   size: ball size, gloss/dark: look, gain: loudness. The type slider glides through them. */
+const MAT=[
+  {e:.2, rho:3.2,mu:.05,wf:.14,size:1.2, gloss:.12,dark:.38,gain:1},
+  {e:.34,rho:.6, mu:.32,wf:.32,size:.72,gloss:.04,dark:.12,gain:.8},
+  {e:.55,rho:2.4,mu:.03,wf:.05,size:1,   gloss:.8, dark:0,  gain:.8},
+  {e:.72,rho:1,  mu:.05,wf:.08,size:.9,  gloss:.45,dark:0,  gain:.7},
+  {e:.9, rho:1.1,mu:.06,wf:.24,size:1.05,gloss:.3, dark:0,  gain:.85}];
+function matAt(t){const p=clamp(t)*4,i=Math.min(3,Math.floor(p)),f=p-i,a=MAT[i],b=MAT[i+1],o={};for(const k in a)o[k]=lerp(a[k],b[k],f);return o}
+let T=+$('#type').value,CV=+$('#count').value,M=matAt(T);
+const countOf=v=>Math.round(1+59*Math.pow(v,1.7));
+const baseR=()=>{const m=Math.min(W,H);return clamp(m*.085/Math.pow(countOf(CV),.3),7,m*.09)};
+
+/* ---------- balls ---------- */
+const COLS=['#FFD60A','#4ECDC4','#FF6B6B','#5E5CE6'];
+const balls=[];let colI=0;
+function addBall(){
+  const r=baseR()*M.size;let x=W/2,y=H/2;
+  for(let k=0;k<25;k++){x=r+Math.random()*(W-2*r);y=r+Math.random()*(H-2*r);
+    if(!balls.some(b=>Math.hypot(b.x-x,b.y-y)<b.r+r))break}
+  balls.push({x,y,vx:0,vy:0,r:1,rs:.88+Math.random()*.24,col:colI++%COLS.length,flash:0,lt:0,dying:false,m:1});
+}
+function syncCount(){
+  const n=countOf(CV);let alive=balls.filter(b=>!b.dying).length;
+  while(alive<n){const d=balls.find(b=>b.dying);if(d)d.dying=false;else addBall();alive++}
+  for(let i=balls.length-1;i>=0&&alive>n;i--)if(!balls[i].dying){balls[i].dying=true;alive--}
+}
+
+/* ---------- hands (fingers or mouse) push balls ---------- */
+const hands=new Map();
+cv.addEventListener('pointerdown',e=>{
+  if(!NEEDS_PERM)start();
+  cv.setPointerCapture?.(e.pointerId);
+  hands.set(e.pointerId,{x:e.clientX,y:e.clientY,px:e.clientX,py:e.clientY,vx:0,vy:0,t:performance.now(),
+    r:e.pointerType==='mouse'?16:Math.max(22,(e.width||0)*.6)});
+});
+cv.addEventListener('pointermove',e=>{
+  const h=hands.get(e.pointerId);if(!h)return;
+  const evs=e.getCoalescedEvents?e.getCoalescedEvents():[e];const last=evs[evs.length-1]||e;
+  const now=performance.now(),dt=Math.max(.004,(now-h.t)/1000);
+  const vx=(last.clientX-h.x)/dt,vy=(last.clientY-h.y)/dt;
+  h.vx=lerp(h.vx,vx,.7);h.vy=lerp(h.vy,vy,.7);h.x=last.clientX;h.y=last.clientY;h.t=now;
+});
+const lift=e=>hands.delete(e.pointerId);
+cv.addEventListener('pointerup',lift);cv.addEventListener('pointercancel',lift);
+
+/* ---------- motion sensor ---------- */
+// ball acceleration in screen pixels (y down); without a sensor the box stands upright
+const G={x:0,y:9.81};let Gn=0,sens=false,senseT0=0,flip=1,flipVotes=0,flipLocked=false;
+const acc={x:0,y:0,z:0,n:0};
+function onMotion(e){const a=e.accelerationIncludingGravity;if(!a||a.x==null)return;
+  acc.x+=a.x;acc.y+=a.y;acc.z+=a.z||0;acc.n++;if(!sens){sens=true;senseT0=performance.now();showHint()}}
+function readSensor(){
+  if(!acc.n)return;
+  const ax=acc.x/acc.n,ay=acc.y/acc.n,az=acc.z/acc.n;acc.x=acc.y=acc.z=acc.n=0;
+  let ang=0;try{ang=(screen.orientation&&typeof screen.orientation.angle==='number')?screen.orientation.angle:(+window.orientation||0)}catch(e){}
+  const c=Math.cos(ang*Math.PI/180),s=Math.sin(ang*Math.PI/180);
+  const sx=ax*c-ay*s,sUp=ax*s+ay*c;
+  // a few browsers report the opposite sign; people almost always hold the phone top-up at first, so check that once
+  if(!flipLocked){if(Math.abs(sUp)>6&&Math.abs(sx)<4)flipVotes+=sUp>0?1:-1;
+    if(performance.now()-senseT0>2500){flipLocked=true;flip=flipVotes<-10?-1:1}}
+  const lim=v=>clamp(v,-80,80);
+  G.x=lim(-sx*flip);G.y=lim(sUp*flip);Gn=Math.min(15,Math.abs(az));
+}
+if(!NEEDS_PERM&&typeof DeviceMotionEvent!=='undefined')addEventListener('devicemotion',onMotion);
+
+/* ---------- a shake for computers (button or space bar) ---------- */
+let shakeT=-1;
+function shake(){start();shakeT=0}
+shakeBtn.addEventListener('click',e=>{e.stopPropagation();shake()});
+addEventListener('keydown',e=>{if(e.code==='Space'&&e.target.tagName!=='INPUT'){e.preventDefault();shake()}});
+
+/* ---------- physics ---------- */
+const HIT_MIN=.045,REST=.07; // m/s: quieter than this is silent, slower than REST stops bouncing (no jitter)
+let hits=[];
+function hit(b,sp,x,y,k,nx,ny){
+  if(k===1){const now=performance.now();if(now-b.lt<12)return;b.lt=now;
+    if(ripples.length<40)ripples.push({x,y,nx,ny,a:clamp(sp/1.4),c:b.col})}
+  b.flash=Math.max(b.flash,clamp(sp/1.2));
+  hits.push({sp,x,r:b.r,k});
+}
+function wall(b,nx,ny,pen,x,y){
+  b.x+=nx*pen;b.y+=ny*pen;
+  const vn=b.vx*nx+b.vy*ny;if(vn>=0)return;
+  const sp=-vn/PXM,e=sp<REST?0:M.e*(1-.12*clamp(sp/4));
+  b.vx-=(1+e)*vn*nx;b.vy-=(1+e)*vn*ny;
+  const tx=-ny,ty=nx,vt=b.vx*tx+b.vy*ty,dv=Math.min(Math.abs(vt),M.wf*(-vn));
+  b.vx-=Math.sign(vt)*dv*tx;b.vy-=Math.sign(vt)*dv*ty;
+  if(sp>HIT_MIN)hit(b,sp,x,y,1,nx,ny);
+}
+function step(dt){
+  const R=baseR();let maxV=0,minR=1e9;
+  for(const b of balls){const tr=b.dying?0:R*M.size*b.rs;b.r=lerp(b.r,tr,1-Math.exp(-dt*14));b.m=M.rho*b.r*b.r;
+    maxV=Math.max(maxV,Math.hypot(b.vx,b.vy));minR=Math.min(minR,Math.max(4,b.r))}
+  for(let i=balls.length-1;i>=0;i--)if(balls[i].dying&&balls[i].r<1.2)balls.splice(i,1);
+  for(const h of hands.values()){maxV=Math.max(maxV,Math.hypot(h.vx,h.vy))}
+  const sub=clamp(Math.ceil(maxV*dt/(.4*minR)),3,16),hd=dt/sub;
+  let gx=G.x,gy=G.y;
+  if(shakeT>=0){const t=shakeT,env=Math.sin(Math.PI*clamp(t/.5));gx+=46*env*Math.sin(2*Math.PI*6*t);gy+=18*env*Math.sin(2*Math.PI*6*t+1.1);
+    shakeT+=dt;if(shakeT>.5)shakeT=-1}
+  const ax=gx*PXM,ay=gy*PXM,fr=M.mu*Gn*PXM,drag=Math.exp(-hd*.15);
+  const hl=[...hands.values()];
+  for(let s=1;s<=sub;s++){
+    const f=s/sub;
+    for(const b of balls){
+      b.vx+=ax*hd;b.vy+=ay*hd;
+      const sp=Math.hypot(b.vx,b.vy);if(sp>0&&fr>0){const d=Math.min(sp,fr*hd);b.vx-=b.vx/sp*d;b.vy-=b.vy/sp*d}
+      b.vx*=drag;b.vy*=drag;
+      const vmax=7*PXM,v2=Math.hypot(b.vx,b.vy);if(v2>vmax){b.vx*=vmax/v2;b.vy*=vmax/v2}
+      b.x+=b.vx*hd;b.y+=b.vy*hd;
+    }
+    // ball against ball
+    for(let i=0;i<balls.length;i++){const a=balls[i];
+      for(let j=i+1;j<balls.length;j++){const b=balls[j];
+        const dx=b.x-a.x,dy=b.y-a.y,rr=a.r+b.r;if(dx>rr||dx<-rr||dy>rr||dy<-rr)continue;
+        const d2=dx*dx+dy*dy;if(d2>=rr*rr||d2<1e-6)continue;
+        const d=Math.sqrt(d2),nx=dx/d,ny=dy/d,pen=rr-d,im=1/a.m,jm=1/b.m,iw=im/(im+jm),jw=jm/(im+jm);
+        a.x-=nx*pen*iw;a.y-=ny*pen*iw;b.x+=nx*pen*jw;b.y+=ny*pen*jw;
+        const rv=(b.vx-a.vx)*nx+(b.vy-a.vy)*ny;if(rv>=0)continue;
+        const sp=-rv/PXM,e=sp<REST?0:M.e,J=-(1+e)*rv/(im+jm);
+        a.vx-=J*nx*im;a.vy-=J*ny*im;b.vx+=J*nx*jm;b.vy+=J*ny*jm;
+        if(sp>HIT_MIN*1.5){const w=b.m/(a.m+b.m);hit(sp*w>sp*(1-w)?a:b,sp,a.x+nx*a.r,a.y+ny*a.r,0)}
+      }}
+    // fingers: soft, heavy pushers that slide along their path within the frame (no tunnelling)
+    for(const h of hl){const hx=lerp(h.px,h.x,f),hy=lerp(h.py,h.y,f);
+      for(const b of balls){const dx=b.x-hx,dy=b.y-hy,rr=b.r+h.r,d2=dx*dx+dy*dy;if(d2>=rr*rr)continue;
+        const d=Math.sqrt(d2)||.01,nx=d2?dx/d:0,ny=d2?dy/d:-1;b.x=hx+nx*rr;b.y=hy+ny*rr;
+        const rv=(b.vx-h.vx)*nx+(b.vy-h.vy)*ny;if(rv<0){const e=.35*M.e;b.vx-=(1+e)*rv*nx;b.vy-=(1+e)*rv*ny}}}
+    // the edges of the screen
+    for(const b of balls){
+      if(b.x<b.r)wall(b,1,0,b.r-b.x,0,b.y);else if(b.x>W-b.r)wall(b,-1,0,b.x-(W-b.r),W,b.y);
+      if(b.y<b.r)wall(b,0,1,b.r-b.y,b.x,0);else if(b.y>H-b.r)wall(b,0,-1,b.y-(H-b.r),b.x,H);
+    }
+  }
+  for(const h of hl){h.px=h.x;h.py=h.y;if(performance.now()-h.t>60){h.vx*=.5;h.vy*=.5}}
+}
+
+/* ---------- sound: every hit plays a tiny pre-made sound of the current material,
+   picked by how hard it hit (soft, medium, hard), at a level and brightness tied to the impact speed,
+   pitched by ball size and panned to where it hit ---------- */
+let ac=null,bus=null,bank=null,started=false,active=0;
+const VARS=4;
+const SYN=[
+  {tc:.0004,pa:.5,na:.35,nt:.004,nf:3500,nh:0,bright:2600,
+   modes:[[85,.03,1],[190,.045,.9],[330,.035,.65],[520,.028,.5],[870,.02,.4],[1400,.014,.25],[3100,.03,.07]]},
+  {tc:.0001,pa:.12,na:1,nt:.0012,nf:9500,nh:2200,bright:9000,grains:true,
+   modes:[[3300,.004,.35],[5400,.003,.3],[260,.012,.1]]},
+  {tc:.00012,pa:.3,na:.4,nt:.0015,nf:8000,nh:600,bright:9000,
+   modes:[[230,.03,.4],[500,.025,.35],[980,.02,.3],[2650,.035,.6],[4400,.025,.45],[7000,.015,.3]]},
+  {tc:.0004,pa:.35,na:.35,nt:.0015,nf:5000,nh:400,bright:5200,
+   modes:[[270,.02,.3],[1150,.04,.85],[2700,.022,.4],[4300,.012,.2]]},
+  {tc:.0028,pa:.9,na:.12,nt:.003,nf:1400,nh:0,bright:1500,
+   modes:[[150,.05,.55],[420,.03,.3]],sweep:[560,240,.025,.08,.45]}];
+function rng(seed){let s=(seed>>>0)||1;return()=>{s^=s<<13;s^=s>>>17;s^=s<<5;return(s>>>0)/4294967296}}
+function renderHit(mi,lv,vi){
+  const sr=ac.sampleRate,L=Math.floor(sr*.3),o=new Float32Array(L),R=rng(1009+mi*9176+lv*613+vi*71),P=SYN[mi];
+  const I=[.3,.65,1][lv],jit=()=>1+(R()-.5)*.08,pitch=jit();
+  const grains=P.grains?[[0,1],[.002+R()*.005,.5+R()*.35],[.007+R()*.009,.25+R()*.35],[.013+R()*.01,.1+R()*.2]]:[[0,1]];
+  for(const[g0,ga]of grains){const s0=Math.floor(g0*sr);if(s0>=L)continue;
+    // contact pulse: harder hits are shorter and brighter
+    const tc=P.tc*(1.35-.5*I),nc=Math.max(1,Math.floor(tc*sr));
+    for(let n=0;n<nc&&s0+n<L;n++)o[s0+n]+=ga*P.pa*Math.sin(Math.PI*n/nc);
+    // noise burst
+    const fc=P.nf*(.45+.75*I),a=1-Math.exp(-2*Math.PI*fc/sr),ah=P.nh?1-Math.exp(-2*Math.PI*P.nh/sr):0;
+    let l1=0,l2=0,hp=0;const nl=Math.min(L-s0,Math.floor(P.nt*8*sr));
+    for(let n=0;n<nl;n++){const w=R()*2-1;l1+=a*(w-l1);l2+=a*(l1-l2);let v=l2;if(ah){hp+=ah*(v-hp);v-=hp}
+      o[s0+n]+=ga*P.na*Math.exp(-n/sr/P.nt)*v*2}
+    // ringing modes (box walls + the ball itself); soft hits excite fewer high modes
+    const br=P.bright*(.35+.65*I);
+    for(const[f0,tau,amp]of P.modes){const f=f0*pitch*(P.grains?jit():1),fa=ga*amp*Math.exp(-f/br)*(.6+.4*I),
+        w=2*Math.PI*f/sr,nl2=Math.min(L-s0,Math.floor(tau*6*sr)),ph=R()*.3;
+      for(let n=0;n<nl2;n++){const t=n/sr;o[s0+n]+=fa*Math.exp(-t/tau)*Math.sin(w*n+ph)*Math.min(1,t/.0003)}}
+    if(P.sweep){const[f0,f1,ts,tau,amp]=P.sweep;let ph=0;const nl3=Math.min(L-s0,Math.floor(tau*6*sr));
+      for(let n=0;n<nl3;n++){const t=n/sr,f=(f1+(f0-f1)*Math.exp(-t/ts))*pitch;ph+=2*Math.PI*f/sr;
+        o[s0+n]+=ga*amp*(.5+.5*I)*Math.exp(-t/tau)*Math.sin(ph)*Math.min(1,t/.001)}}
+  }
+  let pk=0;for(let n=0;n<L;n++)pk=Math.max(pk,Math.abs(o[n]));const g=pk?.95/pk:0,fo=Math.floor(sr*.01);
+  for(let n=0;n<L;n++)o[n]*=g*(n>L-fo?(L-n)/fo:1);
+  // trim the silent tail so short sounds free their voice quickly
+  let end=L;while(end>64&&Math.abs(o[end-1])<1e-4)end--;
+  const buf=ac.createBuffer(1,end,sr);buf.copyToChannel(o.subarray(0,end),0);return buf;
+}
+function boxIR(){const sr=ac.sampleRate,L=Math.floor(sr*.25),b=ac.createBuffer(2,L,sr),R=rng(77);
+  for(let c=0;c<2;c++){const d=b.getChannelData(c);let lp=0;
+    for(let n=0;n<L;n++){lp+=.35*((R()*2-1)-lp);d[n]=lp*Math.exp(-n/sr/.045)}}
+  return b}
+function initAudio(){
+  if(ac)return;
+  const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+  try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
+  ac=new AC({latencyHint:'interactive'});
+  const comp=ac.createDynamicsCompressor();comp.threshold.value=-12;comp.knee.value=6;comp.ratio.value=5;comp.attack.value=.001;comp.release.value=.08;
+  const out=ac.createGain();out.gain.value=.9;comp.connect(out).connect(ac.destination);
+  bus=ac.createGain();bus.connect(comp);
+  const room=ac.createConvolver();room.buffer=boxIR();const wet=ac.createGain();wet.gain.value=.16;bus.connect(room).connect(wet).connect(comp);
+  // make the sounds of the current material now, the rest a moment later so the first tap stays instant
+  bank=SYN.map(()=>null);
+  const order=SYN.map((_,i)=>i).sort((a,b)=>Math.abs(a-T*4)-Math.abs(b-T*4));
+  const fill=()=>{const mi=order.find(i=>!bank[i]);if(mi==null)return;matSounds(mi);setTimeout(fill,40)};setTimeout(fill,60);
+  // play an empty sound inside the tap so iOS unlocks audio
+  const s=ac.createBufferSource();s.buffer=ac.createBuffer(1,1,ac.sampleRate);s.connect(ac.destination);s.start();
+  ac.resume?.();
+}
+function matSounds(mi){return bank[mi]||(bank[mi]=[0,1,2].map(lv=>Array.from({length:VARS},(_,vi)=>renderHit(mi,lv,vi))))}
+function voice(buf,rate,amp,pan){
+  const s=ac.createBufferSource();s.buffer=buf;s.playbackRate.value=rate;
+  const g=ac.createGain();g.gain.value=amp;s.connect(g);
+  if(ac.createStereoPanner){const p=ac.createStereoPanner();p.pan.value=pan;g.connect(p).connect(bus)}else g.connect(bus);
+  active++;s.onended=()=>{active--};s.start();
+}
+let energy=0;
+function flushHits(){
+  if(!hits.length)return;
+  if(!ac||!bank||ac.state!=='running'){hits=[];return}
+  const cap=Math.max(2,(MOBILE?14:24)-Math.floor(active/4));
+  if(hits.length>cap){hits.sort((a,b)=>b.sp-a.sp);hits.length=cap}
+  const pos=clamp(T)*4,i0=Math.min(3,Math.floor(pos)),fr=pos-i0;
+  for(const h of hits){
+    const I=clamp(h.sp/1.6),amp=Math.pow(I,1.15)*(h.k?1:.45)*M.gain;if(amp<.003)continue;
+    energy+=amp;
+    const lv=I<.2?0:I<.5?1:2,rate=clamp(Math.pow(22/Math.max(4,h.r),.4)*(1+(Math.random()-.5)*.05),.55,1.9),pan=clamp(h.x/W*2-1,-1,1)*.8;
+    if(1-fr>.06)voice(matSounds(i0)[lv][Math.floor(Math.random()*VARS)],rate,amp*(1-fr),pan);
+    if(fr>.06)voice(matSounds(i0+1)[lv][Math.floor(Math.random()*VARS)],rate,amp*fr,pan);
+  }
+  hits=[];
+}
+
+/* ---------- start (one tap: sound on, and on iPhone the motion permission) ---------- */
+let hintTimer=0;
+function showHint(){
+  if(!started){setHint(MOBILE?'tap to start':'click to start');return}
+  if(sens){setHint('tilt and shake your phone, or push the balls with your finger');shakeBtn.hidden=true}
+  else{setHint(MOBILE?'push the balls with your finger, or shake':'push the balls with the mouse, or shake');shakeBtn.hidden=false}
+  clearTimeout(hintTimer);hintTimer=setTimeout(()=>hintEl.classList.add('gone'),9000);
+}
+function start(){
+  if(started){if(ac&&ac.state!=='running')ac.resume?.();return}
+  started=true;
+  if(NEEDS_PERM){
+    DeviceMotionEvent.requestPermission().then(s=>{if(s==='granted')addEventListener('devicemotion',onMotion)}).catch(()=>{});
+  }
+  initAudio();
+  showHint();
+  setTimeout(()=>{if(!sens)showHint()},1500);
+}
+document.addEventListener('touchend',e=>{if(!e.target.closest('input'))start()},{passive:true});
+document.addEventListener('click',e=>{if(!e.target.closest('input'))start()});
+document.addEventListener('visibilitychange',()=>{if(!ac)return;if(document.hidden)ac.suspend?.();else ac.resume?.()});
+
+/* ---------- sliders ---------- */
+$('#count').addEventListener('input',e=>{CV=+e.target.value});
+$('#type').addEventListener('input',e=>{T=+e.target.value;M=matAt(T)});
+
+/* ---------- drawing ---------- */
+const sprites=new Map();
+const hex=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));
+const rgb=(c,k=1,d=0)=>`rgb(${c.map(v=>Math.round(lerp(v*k,28,d))).join(',')})`;
+function sprite(ci,r,halo){
+  const rq=Math.max(2,Math.round(r*2)/2),key=ci+'|'+rq+'|'+(halo?'h':Math.round(T*24));
+  let s=sprites.get(key);if(s)return s;
+  if(sprites.size>300)sprites.clear();
+  const pad=halo?rq*1.3:2,R=rq+pad,c=document.createElement('canvas');c.width=c.height=Math.ceil(R*2*dpr);
+  const g=c.getContext('2d');g.scale(dpr,dpr);const col=hex(COLS[ci]);
+  if(halo){const gr=g.createRadialGradient(R,R,rq*.6,R,R,R);gr.addColorStop(0,`rgba(${col},.55)`);gr.addColorStop(1,`rgba(${col},0)`);
+    g.fillStyle=gr;g.fillRect(0,0,R*2,R*2)}
+  else{const d=M.dark,gr=g.createRadialGradient(R-rq*.35,R-rq*.4,rq*.1,R,R,rq);
+    gr.addColorStop(0,rgb(col,1.15,d*.6));gr.addColorStop(.55,rgb(col,1,d));gr.addColorStop(1,rgb(col,.62,d));
+    g.fillStyle=gr;g.beginPath();g.arc(R,R,rq,0,Math.PI*2);g.fill();
+    if(M.gloss>.05){g.fillStyle=`rgba(255,255,255,${(.15+.6*M.gloss).toFixed(2)})`;g.beginPath();
+      g.ellipse(R-rq*.36,R-rq*.42,rq*.32,rq*.2,-.6,0,Math.PI*2);g.fill()}}
+  s={c,R};sprites.set(key,s);return s;
+}
+const ripples=[];
+function draw(dt){
+  cx.clearRect(0,0,W,H);
+  cx.lineCap='round';
+  for(let i=ripples.length-1;i>=0;i--){const p=ripples[i];p.a-=dt*3.2;if(p.a<=0){ripples.splice(i,1);continue}
+    const tx=-p.ny,ty=p.nx,len=14+60*p.a;cx.strokeStyle=COLS[p.c];cx.globalAlpha=p.a*.8;cx.lineWidth=3+4*p.a;
+    cx.beginPath();cx.moveTo(p.x-tx*len,p.y-ty*len);cx.lineTo(p.x+tx*len,p.y+ty*len);cx.stroke()}
+  cx.globalAlpha=1;
+  for(const b of balls){const s=sprite(b.col,b.r,false),k=b.r/(Math.max(2,Math.round(b.r*2)/2));
+    cx.drawImage(s.c,b.x-s.R*k,b.y-s.R*k,s.R*2*k,s.R*2*k)}
+  cx.globalCompositeOperation='lighter';
+  for(const b of balls){b.flash*=Math.exp(-dt*9);if(b.flash<.04)continue;
+    const s=sprite(b.col,b.r,true),k=b.r/(Math.max(2,Math.round(b.r*2)/2));cx.globalAlpha=b.flash;
+    cx.drawImage(s.c,b.x-s.R*k,b.y-s.R*k,s.R*2*k,s.R*2*k)}
+  cx.globalCompositeOperation='source-over';cx.globalAlpha=1;
+}
+
+/* ---------- lil skin colour: one soft colour whose hue drifts; it lights up a little with the noise ---------- */
+const root=document.documentElement,t0=Date.now(),still=matchMedia('(prefers-reduced-motion:reduce)').matches;
+let glow=0,bgT=0;
+function paintBg(dt){
+  glow=lerp(glow,clamp(energy*.5),1-Math.exp(-dt*(energy*.5>glow?10:1.5)));energy=0;
+  bgT+=dt;if(bgT<.05)return;bgT=0;
+  const hue=(200+(still?0:(Date.now()-t0)/60000*360))%360;
+  root.style.setProperty('--bg',`hsl(${hue.toFixed(1)},${(38+8*glow).toFixed(1)}%,${(22+7*glow).toFixed(1)}%)`);
+}
+
+/* ---------- loop ---------- */
+let last=performance.now();
+function frame(now){
+  const dt=Math.min(.034,Math.max(.001,(now-last)/1000));last=now;
+  readSensor();syncCount();step(dt);flushHits();draw(dt);paintBg(dt);
+  requestAnimationFrame(frame);
+}
+addEventListener('resize',resize);
+resize();syncCount();
+for(const b of balls)b.r=baseR()*M.size*b.rs;
+showHint();
+requestAnimationFrame(frame);
+})();
+</script>
+
+</body>
+</html>
