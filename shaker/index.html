@@ -33,6 +33,13 @@ button,input{font-family:inherit;font-weight:bold;color:inherit}
 .hint.gone{opacity:0}
 .link{pointer-events:auto;background:none;border:0;padding:4px 2px;cursor:pointer;text-decoration:underline;text-underline-offset:4px;font-size:.95rem;opacity:.75}
 .link:hover{opacity:1}
+#recBtn{pointer-events:auto;width:56px;height:56px;border-radius:50%;border:0;padding:0;margin-bottom:6px;background:#ff2d2d;cursor:pointer;
+  box-shadow:0 0 26px rgba(255,45,45,.45);touch-action:none;-webkit-touch-callout:none;-webkit-tap-highlight-color:transparent;transition:transform .1s}
+#recBtn:active{transform:scale(.92)}
+#recBtn.own{box-shadow:0 0 0 4px rgba(255,255,255,.55),0 0 26px rgba(255,45,45,.45)}
+#recBtn.recording{animation:pulse 1.2s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(255,45,45,.6)}50%{box-shadow:0 0 0 18px rgba(255,45,45,0)}}
+.btns{display:flex;gap:22px}
 input[type=range]{-webkit-appearance:none;appearance:none;background:transparent;margin:0;cursor:pointer;touch-action:none}
 input[type=range]::-webkit-slider-runnable-track{border-radius:6px;background:rgba(127,127,127,.35)}
 .v input::-webkit-slider-runnable-track{width:12px}
@@ -85,8 +92,10 @@ i.addEventListener('keydown',function(e){if(e.key==='Enter')tryPw()});i.addEvent
     <div class="v"><span class="lbl">type</span><span class="e">bouncy</span><input type="range" id="type" min="0" max="1" step="0.001" value="0.25" aria-label="Type: heavy (left or bottom) to bouncy (right or top)"><span class="e">heavy</span></div>
   </div>
   <div class="foot">
+    <button id="recBtn" aria-label="Hold and make a sound: the balls will use it"></button>
     <p class="hint" id="hint" aria-live="polite">tap to start</p>
-    <button class="link" id="shakeBtn" hidden>shake</button>
+    <div class="btns"><button class="link" id="shakeBtn" hidden>shake</button><button class="link" id="ballsBtn" hidden>ball sounds</button></div>
+    <input type="file" id="soundFile" accept="audio/*" hidden>
   </div>
 </div>
 
@@ -117,11 +126,11 @@ function resize(){
    e: bounce, rho: weight, mu: rolling friction when the phone lies flat, wf: grip on the walls,
    size: ball size, gloss/dark: look, gain: loudness. The type slider glides through them. */
 const MAT=[
-  {e:.2, rho:3.2,mu:.05,wf:.14,size:1.2, gloss:.12,dark:.38,gain:1},
-  {e:.34,rho:.6, mu:.32,wf:.32,size:.72,gloss:.04,dark:.12,gain:.8},
-  {e:.55,rho:2.4,mu:.03,wf:.05,size:1,   gloss:.8, dark:0,  gain:.8},
-  {e:.72,rho:1,  mu:.05,wf:.08,size:.9,  gloss:.45,dark:0,  gain:.7},
-  {e:.9, rho:1.1,mu:.06,wf:.24,size:1.05,gloss:.3, dark:0,  gain:.85}];
+  {e:.2, rho:3.2,mu:.05,wf:.14,size:1.2, gloss:.12,dark:.38,gain:1,orate:.74,ocut:2400,olen:.55},
+  {e:.34,rho:.6, mu:.32,wf:.32,size:.72,gloss:.04,dark:.12,gain:.8,orate:1.25,ocut:9000,olen:.28},
+  {e:.55,rho:2.4,mu:.03,wf:.05,size:1,   gloss:.8, dark:0,  gain:.8,orate:1.1,ocut:13000,olen:.6},
+  {e:.72,rho:1,  mu:.05,wf:.08,size:.9,  gloss:.45,dark:0,  gain:.7,orate:1,ocut:6500,olen:.55},
+  {e:.9, rho:1.1,mu:.06,wf:.24,size:1.05,gloss:.3, dark:0,  gain:.85,orate:.9,ocut:3500,olen:1}];
 function matAt(t){const p=clamp(t)*4,i=Math.min(3,Math.floor(p)),f=p-i,a=MAT[i],b=MAT[i+1],o={};for(const k in a)o[k]=lerp(a[k],b[k],f);return o}
 let T=+$('#type').value,CV=+$('#count').value,M=matAt(T);
 const countOf=v=>Math.round(1+59*Math.pow(v,1.7));
@@ -324,6 +333,99 @@ function voice(buf,rate,amp,pan){
   if(ac.createStereoPanner){const p=ac.createStereoPanner();p.pan.value=pan;g.connect(p).connect(bus)}else g.connect(bus);
   active++;s.onended=()=>{active--};s.start();
 }
+/* ---------- your own sound: hold the red dot and make one sound (a tap, a click, a knock, a "tss").
+   The take is cropped tight onto its first transient and ends before the next one, then every hit plays it,
+   shaped by the hit (louder, brighter and longer when harder) and by the type slider (heavy = lower, darker, shorter) ---------- */
+let own=null;
+function ownVoice(I,amp,rate,pan){
+  const now=ac.currentTime,s=ac.createBufferSource();s.buffer=own;
+  // elastic impact: the sound starts sped up and springs back to its pitch (a dip just under, then home),
+  // more for harder hits and bouncier balls, so it feels like it squashes and bounces
+  const base=clamp(rate*M.orate*(1+(Math.random()-.5)*.06),.3,3),k=(.12+.55*I)*(.25+.75*M.e),
+    t1=.018+.05*M.e,t2=t1+.03+.06*M.e,pr=s.playbackRate;
+  pr.setValueAtTime(base*(1+k),now);pr.exponentialRampToValueAtTime(base*(1-k*.22),now+t1);pr.exponentialRampToValueAtTime(base,now+t2);
+  const f=ac.createBiquadFilter();f.type='lowpass';f.Q.value=.5;f.frequency.value=Math.min(18000,M.ocut*(.25+.75*I)*(.9+Math.random()*.2));
+  const g=ac.createGain(),len=Math.max(.03,Math.min(.28,own.duration)*M.olen*(.35+.65*I));
+  g.gain.setValueAtTime(amp*1.1,now);g.gain.setTargetAtTime(0,now+len*.55,len*.22);
+  s.connect(f).connect(g);
+  if(ac.createStereoPanner){const p=ac.createStereoPanner();p.pan.value=pan;g.connect(p).connect(bus)}else g.connect(bus);
+  active++;s.onended=()=>{active--};s.start(now);s.stop(now+len*1.6+.02);
+}
+function cropHit(x,sr){
+  // loudness envelope in 1 ms steps
+  const hop=Math.max(1,Math.round(sr/1000)),nE=Math.floor(x.length/hop),env=new Float32Array(nE);let pk=0;
+  for(let i=0;i<nE;i++){let m=0;for(let j=i*hop;j<(i+1)*hop;j++)m=Math.max(m,Math.abs(x[j]));env[i]=m;pk=Math.max(pk,m)}
+  if(pk<.004)return null;
+  // first transient: the first ms that jumps well above the quiet before it
+  let floor=1;for(let i=0;i<Math.min(nE,40);i++)floor=Math.min(floor,env[i]+1e-5);
+  const thr=Math.max(pk*.12,floor*4);let on=0;while(on<nE&&env[on]<thr)on++;if(on>=nE)return null;
+  // step back to where the sound really starts rising (max 4 ms), then to a zero crossing
+  let st=on*hop;const back=Math.max(0,st-Math.round(sr*.004));while(st>back&&Math.abs(x[st-1])>pk*.02)st--;
+  while(st>back&&Math.sign(x[st-1])===Math.sign(x[st])&&x[st]!==0)st--;
+  // the hit's own peak, then its decay; stop when it dies away or a second transient starts
+  let pi=on,mx=0;for(let i=on;i<Math.min(nE,on+40);i++)if(env[i]>mx){mx=env[i];pi=i}
+  let en=pi,low=mx;const maxE=Math.min(nE,on+350);
+  for(let i=pi+1;i<maxE;i++){low=Math.min(low,env[i]);en=i;
+    if(env[i]<mx*.012)break;
+    if(i>pi+15&&env[i]>low*3&&env[i]>mx*.3)break}
+  const L=Math.max(hop*10,en*hop-st),y=new Float32Array(L);
+  let p2=0;for(let i=0;i<L;i++){y[i]=x[st+i]||0;p2=Math.max(p2,Math.abs(y[i]))}
+  const g=.95/p2,fi=Math.round(sr*.0004),fo=Math.min(Math.round(sr*.012),L>>1);
+  for(let i=0;i<L;i++)y[i]*=g*(i<fi?i/fi:1)*(i>L-fo?(L-i)/fo:1);
+  const b=ac.createBuffer(1,L,sr);b.copyToChannel(y,0);return b;
+}
+let rec=null,micStream=null;
+function setSession(t){try{if(navigator.audioSession)navigator.audioSession.type=t}catch(e){}}
+async function recStart(){
+  if(rec)return;
+  initAudio();if(!ac)return;ac.resume?.();
+  rec={chunks:[],held:true,t0:performance.now(),got:false,quiet:0,floor:1,n:0};recBtn.classList.add('recording');
+  bus.gain.setTargetAtTime(0,ac.currentTime,.01); // the balls stay quiet so they don't end up in the take
+  try{
+    setSession('play-and-record');
+    if(!micStream)micStream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+  }catch(e){recEnd(true);setSession('playback');setHint('the microphone is not allowed here, so pick a sound file instead');soundFile.click();return}
+  if(!rec)return;
+  const src=ac.createMediaStreamSource(micStream),sp=ac.createScriptProcessor(MOBILE?2048:1024,1,1),mute=ac.createGain();mute.gain.value=0;
+  rec.src=src;rec.sp=sp;src.connect(sp);sp.connect(mute).connect(ac.destination);
+  sp.onaudioprocess=e=>{if(!rec)return;const d=new Float32Array(e.inputBuffer.getChannelData(0));rec.chunks.push(d);
+    let m=0;for(let i=0;i<d.length;i++)m=Math.max(m,Math.abs(d[i]));rec.n++;
+    if(rec.n<=3)rec.floor=Math.min(rec.floor,m+1e-4);
+    const thr=clamp(rec.floor*4,MOBILE?.01:.02,.2);
+    if(m>thr){rec.got=true;rec.quiet=0}else if(rec.got)rec.quiet+=d.length/ac.sampleRate;
+    const el=(performance.now()-rec.t0)/1000;
+    // a tap records until a sound has come and gone; holding records until you let go (max 4 s)
+    if(el>4||(!rec.held&&rec.got&&rec.quiet>.3)||(!rec.held&&!rec.got&&el>3))recEnd(false)};
+  setHint('make one sound');
+}
+function recEnd(cancel){
+  const r=rec;if(!r)return;rec=null;recBtn.classList.remove('recording');
+  try{r.sp&&r.sp.disconnect();r.src&&r.src.disconnect()}catch(e){}
+  bus.gain.setTargetAtTime(1,ac.currentTime+.05,.02);setSession('playback');
+  if(micStream)setTimeout(()=>{if(!rec&&micStream){micStream.getTracks().forEach(t=>t.stop());micStream=null}},20000);
+  if(cancel)return;
+  const n=r.chunks.reduce((a,c)=>a+c.length,0),x=new Float32Array(n);let o=0;for(const c of r.chunks){x.set(c,o);o+=c.length}
+  useSound(x,ac.sampleRate);
+}
+function useSound(x,sr){
+  const b=cropHit(x,sr);
+  if(!b){setHint('that was too quiet, try again a bit louder');return}
+  own=b;recBtn.classList.add('own');ballsBtn.hidden=false;
+  setHint('now the balls make your sound');clearTimeout(hintTimer);hintTimer=setTimeout(()=>hintEl.classList.add('gone'),6000);
+  ownVoice(.8,.8,1,0);
+}
+const recBtn=$('#recBtn'),ballsBtn=$('#ballsBtn'),soundFile=$('#soundFile');
+recBtn.addEventListener('pointerdown',e=>{e.preventDefault();e.stopPropagation();if(!NEEDS_PERM)start();recBtn.setPointerCapture?.(e.pointerId);
+  if(rec)return;recStart()});
+const recUp=()=>{if(rec){rec.held=false;if((performance.now()-rec.t0)>400&&rec.got)recEnd(false)}};
+recBtn.addEventListener('pointerup',recUp);recBtn.addEventListener('pointercancel',()=>{});
+recBtn.addEventListener('contextmenu',e=>e.preventDefault());
+ballsBtn.addEventListener('click',e=>{e.stopPropagation();own=null;recBtn.classList.remove('own');ballsBtn.hidden=true});
+soundFile.addEventListener('change',async()=>{const f=soundFile.files[0];soundFile.value='';if(!f)return;initAudio();
+  try{const b=await ac.decodeAudioData(await f.arrayBuffer()),x=new Float32Array(b.length);
+    for(let c=0;c<b.numberOfChannels;c++){const d=b.getChannelData(c);for(let i=0;i<x.length;i++)x[i]+=d[i]/b.numberOfChannels}
+    useSound(x,b.sampleRate)}catch(e){setHint('could not read that sound')}});
+
 let energy=0;
 function flushHits(){
   if(!hits.length)return;
@@ -335,6 +437,7 @@ function flushHits(){
     const I=clamp(h.sp/1.6),amp=Math.pow(I,1.15)*(h.k?1:.45)*M.gain;if(amp<.003)continue;
     energy+=amp;
     const lv=I<.2?0:I<.5?1:2,rate=clamp(Math.pow(22/Math.max(4,h.r),.4)*(1+(Math.random()-.5)*.05),.55,1.9),pan=clamp(h.x/W*2-1,-1,1)*.8;
+    if(own){ownVoice(I,amp,rate,pan);continue}
     if(1-fr>.06)voice(matSounds(i0)[lv][Math.floor(Math.random()*VARS)],rate,amp*(1-fr),pan);
     if(fr>.06)voice(matSounds(i0+1)[lv][Math.floor(Math.random()*VARS)],rate,amp*fr,pan);
   }
@@ -347,17 +450,19 @@ function showHint(){
   if(!started){setHint(MOBILE?'tap to start':'click to start');return}
   if(sens){setHint('tilt and shake your phone, or push the balls with your finger');shakeBtn.hidden=true}
   else{setHint(MOBILE?'push the balls with your finger, or shake':'push the balls with the mouse, or shake');shakeBtn.hidden=false}
-  clearTimeout(hintTimer);hintTimer=setTimeout(()=>hintEl.classList.add('gone'),9000);
+  clearTimeout(hintTimer);hintTimer=setTimeout(()=>{if(!rec&&!own){setHint('hold the red dot and make a sound to use your own');
+    hintTimer=setTimeout(()=>hintEl.classList.add('gone'),7000)}else hintEl.classList.add('gone')},7000);
 }
 function start(){
   if(started){if(ac&&ac.state!=='running')ac.resume?.();return}
+  if(ac)ac.resume?.();
   started=true;
   if(NEEDS_PERM){
     DeviceMotionEvent.requestPermission().then(s=>{if(s==='granted')addEventListener('devicemotion',onMotion)}).catch(()=>{});
   }
   initAudio();
   showHint();
-  setTimeout(()=>{if(!sens)showHint()},1500);
+  setTimeout(()=>{if(!sens&&!rec)showHint()},1500);
 }
 document.addEventListener('touchend',e=>{if(!e.target.closest('input'))start()},{passive:true});
 document.addEventListener('click',e=>{if(!e.target.closest('input'))start()});
